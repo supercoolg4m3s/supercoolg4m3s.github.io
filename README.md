@@ -82,10 +82,10 @@
 <div class="image-grid">
 
     <!-- IMAGE 1 -->
-    <a href="https://example.com">
+    <a href="ragdoll-hit.html">
         <div class="image-container">
-            <img src="https://via.placeholder.com/300" alt="">
-            <div class="overlay">Game 1</div>
+            <img src="https://tse3.mm.bing.net/th/id/OIP.UsEY9T_SewULgWjiE212VQHaHa?cb=defcache2defcache=1&rs=1&pid=ImgDetMain&o=7&rm=3" alt="">
+            <div class="overlay">Ragdoll Hit</div>
         </div>
     </a>
 
