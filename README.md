@@ -27,7 +27,6 @@
 
 </body>
 </html>
-<!DOCTYPE html>
 <html>
 <head>
     <style>
@@ -157,3 +156,4 @@
 
 </body>
 </html>
+<!DOCTYPE html>
