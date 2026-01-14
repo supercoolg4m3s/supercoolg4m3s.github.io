@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fullscreen Ruffle Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: black;
+      overflow: hidden;
+    }
+
+    ruffle-player {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+  </style>
+
+  <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+</head>
+<body>
+  <ruffle-player src="https://supercoolg4m3s.github.io/theworldshardestgame.swf"></ruffle-player>
+</body>
+</html>
