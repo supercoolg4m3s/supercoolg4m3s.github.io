@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AltTube 2.1</title>
+<title>AltTube 2.2</title>
 <style>
   * { box-sizing:border-box; }
   body { margin:0; background:#0f0f0f; color:#fff; font-family:Arial, sans-serif; }
@@ -128,6 +128,65 @@
   /* SUBS PAGE */
   #subs-list .card { max-width:400px; }
 
+  /* MINIPLAYER */
+  #miniplayer {
+    position:fixed;
+    bottom:20px;
+    right:20px;
+    width:260px;
+    background:#181818;
+    border-radius:8px;
+    display:none;
+    gap:10px;
+    padding:10px;
+    box-shadow:0 0 12px rgba(0,0,0,0.5);
+    cursor:pointer;
+    z-index:9999;
+  }
+
+  #mini-thumb {
+    width:120px;
+    height:68px;
+    object-fit:cover;
+    border-radius:4px;
+  }
+
+  #mini-info {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+  }
+
+  #mini-title {
+    font-size:13px;
+    font-weight:bold;
+    color:#fff;
+    line-height:1.2;
+    max-height:32px;
+    overflow:hidden;
+  }
+
+  #mini-buttons {
+    display:flex;
+    gap:6px;
+  }
+
+  #mini-buttons button {
+    flex:1;
+    padding:4px 6px;
+    font-size:12px;
+    border:none;
+    border-radius:4px;
+    cursor:pointer;
+    background:#333;
+    color:#fff;
+  }
+
+  #mini-buttons button:hover {
+    background:#444;
+  }
+
   @media (max-width:900px) {
     #watch-layout { flex-direction:column; }
     #sidebar { width:100%; height:auto; max-height:400px; }
@@ -209,14 +268,30 @@
       </div>
     </div>
   </div>
+
+  <!-- MINIPLAYER -->
+  <div id="miniplayer">
+    <img id="mini-thumb" src="" alt="Mini thumbnail">
+    <div id="mini-info">
+      <div id="mini-title"></div>
+      <div id="mini-buttons">
+        <button id="mini-resume">Resume</button>
+        <button id="mini-close">Close</button>
+      </div>
+    </div>
+  </div>
 </main>
 
 <script>
-const API_KEY = "AIzaSyBroBtc7nzeL3ZefXhh3Xbo1ivhoOTqQyg";
+const API_KEY = "YOUR_API_KEY_HERE";
 
 let subs = JSON.parse(localStorage.getItem("subs") || "{}");
 let likes = JSON.parse(localStorage.getItem("likes") || "{}");
 let dislikes = JSON.parse(localStorage.getItem("dislikes") || "{}");
+
+let currentVideoId = null;
+let currentVideoTitle = "";
+let currentVideoThumb = "";
 
 function save() {
   localStorage.setItem("subs", JSON.stringify(subs));
@@ -229,6 +304,8 @@ function hideAllPages() {
   document.getElementById("watch-page").style.display = "none";
   document.getElementById("subs-page").style.display = "none";
   document.getElementById("channel-page").style.display = "none";
+
+  if (currentVideoId) showMiniplayer();
 }
 
 function showMain() {
@@ -244,6 +321,7 @@ function showSubsPage() {
 
 function showWatchPage() {
   hideAllPages();
+  hideMiniplayer();
   document.getElementById("watch-page").style.display = "block";
 }
 
@@ -487,6 +565,11 @@ async function loadWatch(vid) {
     document.getElementById("video-channel-name").textContent = info.channelTitle;
     document.getElementById("video-channel-name").onclick = () => openChannel(info.channelId);
 
+    currentVideoId = vid;
+    currentVideoTitle = info.title;
+    currentVideoThumb = info.thumbnails && (info.thumbnails.medium?.url || info.thumbnails.default?.url) || "";
+
+    hideMiniplayer();
     setupLikes(vid);
     await setupWatchChannelInfo(info.channelId, info.channelTitle);
     loadRecs(vid);
@@ -532,7 +615,7 @@ async function setupWatchChannelInfo(channelId, channelTitle) {
       if (thumb) avatarImg.src = thumb.url;
     }
   } catch (e) {
-    // fallback: leave default
+    // leave default
   }
   setupSubButton(document.getElementById("watch-sub-btn"), channelId, channelTitle);
 }
@@ -753,6 +836,35 @@ async function openChannel(channelId) {
     uploadsGrid.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load uploads.</div>";
   }
 }
+
+function showMiniplayer() {
+  if (!currentVideoId) return;
+  const mini = document.getElementById("miniplayer");
+  document.getElementById("mini-thumb").src = currentVideoThumb || "";
+  document.getElementById("mini-title").textContent = currentVideoTitle || "";
+  mini.style.display = "flex";
+}
+
+function hideMiniplayer() {
+  document.getElementById("miniplayer").style.display = "none";
+}
+
+function clearMiniplayer() {
+  currentVideoId = null;
+  currentVideoTitle = "";
+  currentVideoThumb = "";
+  hideMiniplayer();
+}
+
+document.getElementById("mini-resume").onclick = () => {
+  if (currentVideoId) loadWatch(currentVideoId);
+};
+
+document.getElementById("mini-close").onclick = () => {
+  clearMiniplayer();
+  const player = document.getElementById("player");
+  player.src = "";
+};
 
 async function loadHome() {
   showMain();
