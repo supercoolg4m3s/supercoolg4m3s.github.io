@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AltTube 2.2</title>
+<title>AltTube 2.3</title>
 <style>
   * { box-sizing:border-box; }
   body { margin:0; background:#0f0f0f; color:#fff; font-family:Arial, sans-serif; }
@@ -128,7 +128,7 @@
   /* SUBS PAGE */
   #subs-list .card { max-width:400px; }
 
-  /* MINIPLAYER */
+  /* MINIPLAYER (real video) */
   #miniplayer {
     position:fixed;
     bottom:20px;
@@ -140,14 +140,19 @@
     gap:10px;
     padding:10px;
     box-shadow:0 0 12px rgba(0,0,0,0.5);
-    cursor:pointer;
     z-index:9999;
   }
 
-  #mini-thumb {
-    width:120px;
-    height:68px;
-    object-fit:cover;
+  #mini-player-container {
+    width:200px;
+    height:112px;
+    flex-shrink:0;
+  }
+
+  #mini-player-container iframe {
+    width:100%;
+    height:100%;
+    border:none;
     border-radius:4px;
   }
 
@@ -170,6 +175,7 @@
   #mini-buttons {
     display:flex;
     gap:6px;
+    margin-top:6px;
   }
 
   #mini-buttons button {
@@ -241,7 +247,7 @@
   <!-- WATCH PAGE -->
   <div id="watch-page">
     <div id="watch-layout">
-      <div style="flex:3; min-width:0;">
+      <div id="watch-main-column" style="flex:3; min-width:0;">
         <iframe id="player" allowfullscreen></iframe>
         <button id="watch-open-youtube" style="display:none;">Open on YouTube</button>
 
@@ -269,9 +275,9 @@
     </div>
   </div>
 
-  <!-- MINIPLAYER -->
+  <!-- MINIPLAYER (real iframe) -->
   <div id="miniplayer">
-    <img id="mini-thumb" src="" alt="Mini thumbnail">
+    <div id="mini-player-container"></div>
     <div id="mini-info">
       <div id="mini-title"></div>
       <div id="mini-buttons">
@@ -291,7 +297,7 @@ let dislikes = JSON.parse(localStorage.getItem("dislikes") || "{}");
 
 let currentVideoId = null;
 let currentVideoTitle = "";
-let currentVideoThumb = "";
+let currentVideoThumb = ""; // kept for future use if you want
 
 function save() {
   localStorage.setItem("subs", JSON.stringify(subs));
@@ -305,7 +311,10 @@ function hideAllPages() {
   document.getElementById("subs-page").style.display = "none";
   document.getElementById("channel-page").style.display = "none";
 
-  if (currentVideoId) showMiniplayer();
+  if (currentVideoId) {
+    movePlayerToMini();
+    showMiniplayer();
+  }
 }
 
 function showMain() {
@@ -321,6 +330,7 @@ function showSubsPage() {
 
 function showWatchPage() {
   hideAllPages();
+  movePlayerToWatch();
   hideMiniplayer();
   document.getElementById("watch-page").style.display = "block";
 }
@@ -569,7 +579,8 @@ async function loadWatch(vid) {
     currentVideoTitle = info.title;
     currentVideoThumb = info.thumbnails && (info.thumbnails.medium?.url || info.thumbnails.default?.url) || "";
 
-    hideMiniplayer();
+    document.getElementById("mini-title").textContent = currentVideoTitle;
+
     setupLikes(vid);
     await setupWatchChannelInfo(info.channelId, info.channelTitle);
     loadRecs(vid);
@@ -837,12 +848,32 @@ async function openChannel(channelId) {
   }
 }
 
+/* MINIPLAYER: move iframe instead of reloading */
+
+function movePlayerToMini() {
+  const miniContainer = document.getElementById("mini-player-container");
+  const player = document.getElementById("player");
+  if (!miniContainer.contains(player)) {
+    miniContainer.appendChild(player);
+    player.style.width = "100%";
+    player.style.height = "100%";
+  }
+}
+
+function movePlayerToWatch() {
+  const watchMain = document.getElementById("watch-main-column");
+  const player = document.getElementById("player");
+  if (!watchMain.contains(player)) {
+    watchMain.insertBefore(player, watchMain.firstChild);
+    player.style.width = "100%";
+    player.style.height = "480px";
+  }
+}
+
 function showMiniplayer() {
   if (!currentVideoId) return;
-  const mini = document.getElementById("miniplayer");
-  document.getElementById("mini-thumb").src = currentVideoThumb || "";
   document.getElementById("mini-title").textContent = currentVideoTitle || "";
-  mini.style.display = "flex";
+  document.getElementById("miniplayer").style.display = "flex";
 }
 
 function hideMiniplayer() {
@@ -857,13 +888,14 @@ function clearMiniplayer() {
 }
 
 document.getElementById("mini-resume").onclick = () => {
-  if (currentVideoId) loadWatch(currentVideoId);
+  if (currentVideoId) loadWatch(currentVideoId); // keeps same iframe, just moves it back
 };
 
 document.getElementById("mini-close").onclick = () => {
   clearMiniplayer();
   const player = document.getElementById("player");
-  player.src = "";
+  player.src = ""; // stop video completely
+  movePlayerToWatch();
 };
 
 async function loadHome() {
