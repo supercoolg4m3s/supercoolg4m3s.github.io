@@ -232,11 +232,13 @@ function hideAllPages() {
 }
 
 function showMain() {
+  stopVideo();
   hideAllPages();
   document.getElementById("main-page").style.display = "block";
 }
 
 function showSubsPage() {
+  stopVideo();
   hideAllPages();
   document.getElementById("subs-page").style.display = "block";
   renderSubs();
@@ -248,6 +250,7 @@ function showWatchPage() {
 }
 
 function showChannelPage() {
+  stopVideo();
   hideAllPages();
   document.getElementById("channel-page").style.display = "block";
 }
@@ -347,13 +350,19 @@ function createVideoCard(info) {
   return card;
 }
 
+const apiCache = {};
+function cachedFetch(url) {
+  if (apiCache[url]) return apiCache[url];
+  return apiCache[url] = fetch(url).then(r => r.json());
+}
+
 async function loadTrending() {
   const grid = document.getElementById("trending-grid");
   grid.innerHTML = "<div style='color:#aaa;font-size:13px;'>Loading trending...</div>";
 
   try {
     const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&maxResults=24&regionCode=US&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
     grid.innerHTML = "";
     data.items.forEach(item => {
@@ -403,7 +412,7 @@ async function loadSubsRows() {
 
     try {
       const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${cid}&order=date&type=video&maxResults=8&key=${API_KEY}`;
-      const res = await fetch(url);
+      const res = await cachedFetch(url);
       const data = await res.json();
       row.innerHTML = "";
       data.items.forEach(item => {
@@ -431,6 +440,11 @@ function clearSearchView() {
   document.getElementById("subs-rows").style.display = "block";
 }
 
+function stopVideo() {
+  const p = document.getElementById("player");
+  p.src = "";
+}
+
 async function search(q) {
   showMain();
   document.getElementById("trending-title").style.display = "none";
@@ -446,7 +460,7 @@ async function search(q) {
 
   try {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=30&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
     grid.innerHTML = "";
     data.items.forEach(item => {
@@ -476,7 +490,7 @@ async function loadWatch(vid) {
 
   try {
     const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${vid}&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
     if (!data.items || !data.items[0]) throw new Error("No video info");
     const info = data.items[0].snippet;
@@ -524,7 +538,7 @@ async function setupWatchChannelInfo(channelId, channelTitle) {
   avatarImg.src = "";
   try {
     const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${channelId}&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
     if (data.items && data.items[0]) {
       const ch = data.items[0];
@@ -565,7 +579,7 @@ async function loadRecs(vid) {
 
   try {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&relatedToVideoId=${vid}&maxResults=20&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
 
     if (!data.items || data.items.length === 0) throw new Error("No recs");
@@ -608,7 +622,7 @@ async function loadRecs(vid) {
 async function loadTrendingSidebar(box) {
   try {
     const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&maxResults=10&regionCode=US&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
     data.items.forEach(item => {
       const card = document.createElement("div");
@@ -706,7 +720,7 @@ async function openChannel(channelId) {
 
   try {
     const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,brandingSettings&id=${channelId}&key=${API_KEY}`;
-    const res = await fetch(url);
+    const res = await cachedFetch(url);
     const data = await res.json();
     if (!data.items || !data.items[0]) throw new Error("No channel");
 
@@ -732,7 +746,7 @@ async function openChannel(channelId) {
 
   try {
     const url2 = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=24&key=${API_KEY}`;
-    const res2 = await fetch(url2);
+    const res2 = await cachedFetch(url2);
     const data2 = await res2.json();
     uploadsGrid.innerHTML = "";
     if (!data2.items || data2.items.length === 0) {
