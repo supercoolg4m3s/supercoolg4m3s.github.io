@@ -296,18 +296,6 @@
   </div>
 
   <!-- MINIPLAYER (real iframe, draggable, snapping) -->
-  <div id="miniplayer">
-    <div id="mini-inner">
-      <div id="mini-player-slot"></div>
-      <div id="mini-info">
-        <div id="mini-title"></div>
-        <div id="mini-buttons">
-          <button id="mini-resume">Resume</button>
-          <button id="mini-close">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
 </main>
 
 <script>
@@ -335,8 +323,11 @@ function hideAllPages() {
   document.getElementById("subs-page").style.display = "none";
   document.getElementById("channel-page").style.display = "none";
 
-  if (currentVideoId) enterMiniMode();
+  // STOP VIDEO WHEN LEAVING WATCH PAGE
+  const player = document.getElementById("player");
+  player.src = ""; // instantly stops audio + video
 }
+
 
 function showMain() {
   hideAllPages();
@@ -1038,7 +1029,7 @@ document.getElementById("mini-resume").onclick = () => {
 };
 
 document.getElementById("mini-close").onclick = () => {
-  clearMiniplayerState();
+  // clearMiniplayerState();
   const player = document.getElementById("player");
   player.src = ""; // stop video
   exitMiniMode();
