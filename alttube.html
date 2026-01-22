@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AltTube 2.3</title>
+<title>AltTube 2.4</title>
 <style>
   * { box-sizing:border-box; }
   body { margin:0; background:#0f0f0f; color:#fff; font-family:Arial, sans-serif; }
@@ -61,7 +61,19 @@
 
   /* WATCH PAGE */
   #watch-layout { display:flex; gap:20px; }
-  #player { width:100%; height:480px; border:none; border-radius:6px; background:#000; }
+  #watch-main-column { flex:3; min-width:0; }
+  #player-wrapper {
+    width:100%;
+    height:480px;
+    position:relative;
+  }
+  #player {
+    width:100%;
+    height:100%;
+    border:none;
+    border-radius:6px;
+    background:#000;
+  }
   #sidebar { width:350px; overflow-y:auto; height:calc(100vh - 80px); }
   .rec-card { display:flex; gap:10px; margin-bottom:16px; cursor:pointer; }
   .rec-thumb { width:160px; height:90px; object-fit:cover; border-radius:4px; }
@@ -128,41 +140,50 @@
   /* SUBS PAGE */
   #subs-list .card { max-width:400px; }
 
-  /* MINIPLAYER (real video) */
+  /* MINIPLAYER (real iframe, draggable, snapping) */
   #miniplayer {
     position:fixed;
+    width:340px;
+    height:200px;
     bottom:20px;
     right:20px;
-    width:260px;
-    background:#181818;
-    border-radius:8px;
     display:none;
-    gap:10px;
-    padding:10px;
-    box-shadow:0 0 12px rgba(0,0,0,0.5);
     z-index:9999;
+    cursor:grab;
   }
-
-  #mini-player-container {
-    width:200px;
-    height:112px;
-    flex-shrink:0;
+  #miniplayer.dragging {
+    cursor:grabbing;
   }
-
-  #mini-player-container iframe {
+  #mini-inner {
     width:100%;
     height:100%;
-    border:none;
-    border-radius:4px;
+    display:flex;
+    background:#181818;
+    border-radius:8px;
+    padding:8px;
+    gap:8px;
   }
-
+  #mini-player-slot {
+    width:320px;
+    height:180px;
+    overflow:hidden;
+    position:relative;
+    flex-shrink:0;
+  }
+  #player-wrapper.mini-mode {
+    position:absolute;
+    width:800px;
+    height:450px;
+    right:0;
+    bottom:0;
+    transform:scale(0.4);
+  }
   #mini-info {
     flex:1;
     display:flex;
     flex-direction:column;
     justify-content:space-between;
   }
-
   #mini-title {
     font-size:13px;
     font-weight:bold;
@@ -171,13 +192,11 @@
     max-height:32px;
     overflow:hidden;
   }
-
   #mini-buttons {
     display:flex;
     gap:6px;
     margin-top:6px;
   }
-
   #mini-buttons button {
     flex:1;
     padding:4px 6px;
@@ -188,7 +207,6 @@
     background:#333;
     color:#fff;
   }
-
   #mini-buttons button:hover {
     background:#444;
   }
@@ -196,7 +214,7 @@
   @media (max-width:900px) {
     #watch-layout { flex-direction:column; }
     #sidebar { width:100%; height:auto; max-height:400px; }
-    #player { height:260px; }
+    #player-wrapper { height:260px; }
   }
 </style>
 </head>
@@ -247,8 +265,10 @@
   <!-- WATCH PAGE -->
   <div id="watch-page">
     <div id="watch-layout">
-      <div id="watch-main-column" style="flex:3; min-width:0;">
-        <iframe id="player" allowfullscreen></iframe>
+      <div id="watch-main-column">
+        <div id="player-wrapper">
+          <iframe id="player" allowfullscreen></iframe>
+        </div>
         <button id="watch-open-youtube" style="display:none;">Open on YouTube</button>
 
         <h2 id="video-title"></h2>
@@ -275,21 +295,23 @@
     </div>
   </div>
 
-  <!-- MINIPLAYER (real iframe) -->
+  <!-- MINIPLAYER (real iframe, draggable, snapping) -->
   <div id="miniplayer">
-    <div id="mini-player-container"></div>
-    <div id="mini-info">
-      <div id="mini-title"></div>
-      <div id="mini-buttons">
-        <button id="mini-resume">Resume</button>
-        <button id="mini-close">Close</button>
+    <div id="mini-inner">
+      <div id="mini-player-slot"></div>
+      <div id="mini-info">
+        <div id="mini-title"></div>
+        <div id="mini-buttons">
+          <button id="mini-resume">Resume</button>
+          <button id="mini-close">Close</button>
+        </div>
       </div>
     </div>
   </div>
 </main>
 
 <script>
-const API_KEY = "AIzaSyBroBtc7nzeL3ZefXhh3Xbo1ivhoOTqQyg";
+const API_KEY = "YOUR_API_KEY_HERE";
 
 let subs = JSON.parse(localStorage.getItem("subs") || "{}");
 let likes = JSON.parse(localStorage.getItem("likes") || "{}");
@@ -297,7 +319,7 @@ let dislikes = JSON.parse(localStorage.getItem("dislikes") || "{}");
 
 let currentVideoId = null;
 let currentVideoTitle = "";
-let currentVideoThumb = ""; // kept for future use if you want
+let currentVideoThumb = "";
 
 function save() {
   localStorage.setItem("subs", JSON.stringify(subs));
@@ -305,16 +327,15 @@ function save() {
   localStorage.setItem("dislikes", JSON.stringify(dislikes));
 }
 
+/* PAGE NAVIGATION */
+
 function hideAllPages() {
   document.getElementById("main-page").style.display = "none";
   document.getElementById("watch-page").style.display = "none";
   document.getElementById("subs-page").style.display = "none";
   document.getElementById("channel-page").style.display = "none";
 
-  if (currentVideoId) {
-    movePlayerToMini();
-    showMiniplayer();
-  }
+  if (currentVideoId) enterMiniMode();
 }
 
 function showMain() {
@@ -329,10 +350,12 @@ function showSubsPage() {
 }
 
 function showWatchPage() {
-  hideAllPages();
-  movePlayerToWatch();
-  hideMiniplayer();
+  // Do NOT call hideAllPages here, to avoid auto-entering mini
+  document.getElementById("main-page").style.display = "none";
+  document.getElementById("subs-page").style.display = "none";
+  document.getElementById("channel-page").style.display = "none";
   document.getElementById("watch-page").style.display = "block";
+  exitMiniMode();
 }
 
 function showChannelPage() {
@@ -365,6 +388,8 @@ document.getElementById("fullscreen-btn").onclick = () => {
   const p = document.getElementById("player");
   if (p.requestFullscreen) p.requestFullscreen();
 };
+
+/* DRAGGABLE ROWS */
 
 function makeDraggableRow(row) {
   let isDown = false;
@@ -400,6 +425,8 @@ function makeDraggableRow(row) {
   }, { passive:false });
 }
 
+/* VIDEO CARDS */
+
 function createVideoCard(info) {
   const card = document.createElement("div");
   card.className = "card";
@@ -434,6 +461,8 @@ function createVideoCard(info) {
 
   return card;
 }
+
+/* HOME CONTENT */
 
 async function loadTrending() {
   const grid = document.getElementById("trending-grid");
@@ -519,6 +548,8 @@ function clearSearchView() {
   document.getElementById("subs-rows").style.display = "block";
 }
 
+/* SEARCH */
+
 async function search(q) {
   showMain();
   document.getElementById("trending-title").style.display = "none";
@@ -552,8 +583,11 @@ async function search(q) {
   }
 }
 
+/* WATCH PAGE / VIDEO LOAD */
+
 async function loadWatch(vid) {
   showWatchPage();
+
   const player = document.getElementById("player");
   const openBtn = document.getElementById("watch-open-youtube");
   player.src = `https://www.youtube.com/embed/${vid}`;
@@ -578,7 +612,6 @@ async function loadWatch(vid) {
     currentVideoId = vid;
     currentVideoTitle = info.title;
     currentVideoThumb = info.thumbnails && (info.thumbnails.medium?.url || info.thumbnails.default?.url) || "";
-
     document.getElementById("mini-title").textContent = currentVideoTitle;
 
     setupLikes(vid);
@@ -652,6 +685,8 @@ function setupSubButton(btn, channelId, channelTitle) {
   };
   update();
 }
+
+/* RECOMMENDATIONS */
 
 async function loadRecs(vid) {
   const box = document.getElementById("recommendations");
@@ -737,6 +772,8 @@ async function loadTrendingSidebar(box) {
   }
 }
 
+/* SUBSCRIPTIONS PAGE */
+
 function renderSubs() {
   const box = document.getElementById("subs-list");
   box.innerHTML = "";
@@ -781,6 +818,8 @@ function renderSubs() {
     box.appendChild(card);
   });
 }
+
+/* CHANNEL PAGE */
 
 async function openChannel(channelId) {
   showChannelPage();
@@ -848,55 +887,164 @@ async function openChannel(channelId) {
   }
 }
 
-/* MINIPLAYER: move iframe instead of reloading */
+/* MINIPLAYER: WRAPPER-MOVES, DRAGGABLE, SNAPPING */
 
-function movePlayerToMini() {
-  const miniContainer = document.getElementById("mini-player-container");
-  const player = document.getElementById("player");
-  if (!miniContainer.contains(player)) {
-    miniContainer.appendChild(player);
-    player.style.width = "100%";
-    player.style.height = "100%";
-  }
-}
-
-function movePlayerToWatch() {
-  const watchMain = document.getElementById("watch-main-column");
-  const player = document.getElementById("player");
-  if (!watchMain.contains(player)) {
-    watchMain.insertBefore(player, watchMain.firstChild);
-    player.style.width = "100%";
-    player.style.height = "480px";
-  }
-}
-
-function showMiniplayer() {
+function enterMiniMode() {
   if (!currentVideoId) return;
-  document.getElementById("mini-title").textContent = currentVideoTitle || "";
-  document.getElementById("miniplayer").style.display = "flex";
+  const slot = document.getElementById("mini-player-slot");
+  const wrapper = document.getElementById("player-wrapper");
+  if (!slot.contains(wrapper)) {
+    slot.appendChild(wrapper);
+  }
+  wrapper.classList.add("mini-mode");
+  // default origin bottom-right
+  wrapper.style.transformOrigin = "bottom right";
+  const mini = document.getElementById("miniplayer");
+  mini.style.display = "block";
 }
 
-function hideMiniplayer() {
-  document.getElementById("miniplayer").style.display = "none";
+function exitMiniMode() {
+  const col = document.getElementById("watch-main-column");
+  const wrapper = document.getElementById("player-wrapper");
+  if (!col.contains(wrapper)) {
+    col.insertBefore(wrapper, col.firstChild);
+  }
+  wrapper.classList.remove("mini-mode");
+  wrapper.style.transformOrigin = "";
+  const mini = document.getElementById("miniplayer");
+  mini.style.display = "none";
+  // reset position to bottom-right
+  mini.style.left = "";
+  mini.style.top = "";
+  mini.style.right = "20px";
+  mini.style.bottom = "20px";
 }
 
-function clearMiniplayer() {
+function clearMiniplayerState() {
   currentVideoId = null;
   currentVideoTitle = "";
   currentVideoThumb = "";
-  hideMiniplayer();
+  document.getElementById("mini-title").textContent = "";
 }
 
+/* DRAG + SNAP */
+
+(function setupMiniDrag() {
+  const mini = document.getElementById("miniplayer");
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let startLeft = 0, startTop = 0;
+
+  function onMouseDown(e) {
+    if (e.target.closest("#mini-buttons")) return; // don't drag from buttons
+    isDragging = true;
+    mini.classList.add("dragging");
+
+    const rect = mini.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    // switch from bottom/right to explicit left/top if needed
+    mini.style.left = startLeft + "px";
+    mini.style.top = startTop + "px";
+    mini.style.right = "auto";
+    mini.style.bottom = "auto";
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  function onMouseMove(e) {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    mini.style.left = (startLeft + dx) + "px";
+    mini.style.top = (startTop + dy) + "px";
+  }
+
+  function onMouseUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    mini.classList.remove("dragging");
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    snapMiniToEdge();
+  }
+
+  function snapMiniToEdge() {
+    const miniRect = mini.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const distLeft = miniRect.left;
+    const distRight = vw - (miniRect.right);
+    const distTop = miniRect.top;
+    const distBottom = vh - (miniRect.bottom);
+
+    const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+
+    let snapLeft = miniRect.left;
+    let snapTop = miniRect.top;
+    let useLeft = true, useTop = true;
+    let originH = "right", originV = "bottom";
+
+    if (minDist === distLeft) {
+      snapLeft = 20;
+      useLeft = true;
+      originH = "left";
+    } else if (minDist === distRight) {
+      snapLeft = vw - miniRect.width - 20;
+      useLeft = true;
+      originH = "right";
+    } else if (minDist === distTop) {
+      snapTop = 20;
+      useTop = true;
+      originV = "top";
+    } else if (minDist === distBottom) {
+      snapTop = vh - miniRect.height - 20;
+      useTop = true;
+      originV = "bottom";
+    }
+
+    // corners: adjust origin based on quadrant
+    if (snapTop <= 20) originV = "top";
+    else if (snapTop >= vh - miniRect.height - 20) originV = "bottom";
+    if (snapLeft <= 20) originH = "left";
+    else if (snapLeft >= vw - miniRect.width - 20) originH = "right";
+
+    mini.style.left = snapLeft + "px";
+    mini.style.top = snapTop + "px";
+    mini.style.right = "auto";
+    mini.style.bottom = "auto";
+
+    const wrapper = document.getElementById("player-wrapper");
+    if (wrapper.classList.contains("mini-mode")) {
+      wrapper.style.transformOrigin = originV + " " + originH;
+    }
+  }
+
+  mini.addEventListener("mousedown", onMouseDown);
+})();
+
+/* MINIPLAYER BUTTONS */
+
 document.getElementById("mini-resume").onclick = () => {
-  if (currentVideoId) loadWatch(currentVideoId); // keeps same iframe, just moves it back
+  if (currentVideoId) {
+    // Do NOT reload the video; just go back to watch page
+    showWatchPage();
+  }
 };
 
 document.getElementById("mini-close").onclick = () => {
-  clearMiniplayer();
+  clearMiniplayerState();
   const player = document.getElementById("player");
-  player.src = ""; // stop video completely
-  movePlayerToWatch();
+  player.src = ""; // stop video
+  exitMiniMode();
 };
+
+/* HOME LOAD */
 
 async function loadHome() {
   showMain();
