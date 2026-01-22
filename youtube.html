@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AltTube 2.1</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#0f0f0f; color:#fff; font-family:Arial, sans-serif; }
+  a { color:inherit; text-decoration:none; }
+
+  header {
+    background:#202020; padding:10px 20px; display:flex; align-items:center; gap:10px;
+    position:sticky; top:0; z-index:10;
+  }
+  h1 { margin:0; color:#ff0000; cursor:pointer; font-size:22px; }
+  #search-box {
+    flex:1; padding:8px 10px; border:none; border-radius:3px; background:#121212; color:#fff;
+  }
+  #search-box:focus { outline:1px solid #3ea6ff; }
+  #search-btn {
+    padding:8px 16px; background:#cc0000; border:none; color:white; cursor:pointer; border-radius:3px;
+  }
+  #search-btn:hover { background:#ff0000; }
+  #home-view, #sub-view {
+    cursor:pointer; color:#3ea6ff; font-size:14px;
+  }
+
+  main { padding:20px; }
+
+  #main-page, #watch-page, #subs-page, #channel-page { display:none; }
+
+  h2.section-title {
+    margin:20px 0 10px; font-size:18px; font-weight:bold;
+  }
+
+  /* GRID LAYOUTS */
+  .video-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+    gap:16px;
+  }
+
+  .card {
+    background:#181818; border-radius:4px; overflow:hidden; cursor:pointer;
+  }
+  .thumb { width:100%; height:150px; object-fit:cover; display:block; }
+  .card-content { padding:8px; }
+  .title { font-size:14px; font-weight:bold; margin-bottom:4px; }
+  .meta { font-size:12px; color:#aaa; }
+
+  /* SUBS ROWS (DRAG SCROLL) */
+  .row-container { position:relative; margin-bottom:10px; }
+  .video-row {
+    display:flex; gap:12px; overflow-x:auto; padding-bottom:6px;
+    scrollbar-width:none;
+  }
+  .video-row::-webkit-scrollbar { display:none; }
+  .video-row .card {
+    min-width:240px; max-width:240px; flex:0 0 auto;
+  }
+
+  /* WATCH PAGE */
+  #watch-layout { display:flex; gap:20px; }
+  #player { width:100%; height:480px; border:none; border-radius:6px; background:#000; }
+  #sidebar { width:350px; overflow-y:auto; height:calc(100vh - 80px); }
+  .rec-card { display:flex; gap:10px; margin-bottom:16px; cursor:pointer; }
+  .rec-thumb { width:160px; height:90px; object-fit:cover; border-radius:4px; }
+  .rec-info .title { font-size:13px; }
+  .rec-info .meta { font-size:11px; }
+
+  #like-bar { margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .like-btn {
+    padding:6px 12px; background:#333; border:none; border-radius:4px; cursor:pointer; color:white;
+    font-size:13px;
+  }
+  .like-btn.active { background:#3ea6ff; }
+  #fullscreen-btn {
+    padding:6px 12px; background:#444; border:none; border-radius:4px; cursor:pointer; color:#fff;
+    font-size:13px;
+  }
+  .sub-btn {
+    padding:6px 10px; background:#cc0000;
+    border:none; color:white; cursor:pointer; border-radius:2px; font-size:12px;
+  }
+  .sub-btn.subscribed { background:#444; color:#00ff88; }
+
+  #video-title { margin:12px 0 4px; font-size:20px; }
+  #video-channel-row {
+    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  #video-channel-avatar {
+    width:32px; height:32px; border-radius:50%; background:#333; flex-shrink:0;
+  }
+  #video-channel-name {
+    font-size:14px; color:#aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;
+  }
+  #video-description { font-size:13px; color:#ccc; white-space:pre-wrap; max-height:200px; overflow-y:auto; }
+
+  #watch-open-youtube {
+    margin-top:8px; padding:6px 10px; background:#3ea6ff; border:none; border-radius:3px;
+    color:#000; font-size:13px; cursor:pointer;
+  }
+
+  /* CHANNEL PAGE */
+  #channel-banner {
+    width:100%; height:80px; background:#181818; background-size:cover; background-position:center;
+    border-radius:4px;
+  }
+  #channel-header {
+    display:flex; align-items:center; gap:12px; margin-top:10px;
+  }
+  #channel-avatar {
+    width:56px; height:56px; border-radius:50%; background:#333; flex-shrink:0;
+  }
+  #channel-name {
+    font-size:18px; font-weight:bold;
+  }
+  #channel-description {
+    margin-top:6px; font-size:13px; color:#ccc; max-width:700px; white-space:pre-wrap;
+  }
+  #channel-sub-btn {
+    margin-top:10px;
+  }
+  #channel-uploads-title {
+    margin:20px 0 10px; font-size:16px; font-weight:bold;
+  }
+
+  /* SUBS PAGE */
+  #subs-list .card { max-width:400px; }
+
+  @media (max-width:900px) {
+    #watch-layout { flex-direction:column; }
+    #sidebar { width:100%; height:auto; max-height:400px; }
+    #player { height:260px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="home-btn">AltTube</h1>
+  <input id="search-box" placeholder="Search videos...">
+  <button id="search-btn">Search</button>
+  <div id="home-view">Home</div>
+  <div id="sub-view">Subscriptions</div>
+</header>
+
+<main>
+  <!-- MAIN PAGE -->
+  <div id="main-page">
+    <h2 class="section-title" id="trending-title">Trending Now</h2>
+    <div id="trending-grid" class="video-grid"></div>
+
+    <h2 class="section-title">Latest From Your Subscriptions</h2>
+    <div id="subs-rows"></div>
+
+    <h2 class="section-title" id="search-section-title" style="display:none;">Search Results</h2>
+    <div id="search-grid" class="video-grid" style="display:none;"></div>
+  </div>
+
+  <!-- SUBSCRIPTIONS PAGE -->
+  <div id="subs-page">
+    <h2 class="section-title">Your Subscribed Channels</h2>
+    <div id="subs-list"></div>
+  </div>
+
+  <!-- CHANNEL PAGE -->
+  <div id="channel-page">
+    <div id="channel-banner"></div>
+    <div id="channel-header">
+      <img id="channel-avatar" src="" alt="Channel avatar">
+      <div>
+        <div id="channel-name"></div>
+        <div id="channel-description"></div>
+        <button id="channel-sub-btn" class="sub-btn">Subscribe</button>
+      </div>
+    </div>
+    <div id="channel-uploads-title">Uploads</div>
+    <div id="channel-uploads-grid" class="video-grid"></div>
+  </div>
+
+  <!-- WATCH PAGE -->
+  <div id="watch-page">
+    <div id="watch-layout">
+      <div style="flex:3; min-width:0;">
+        <iframe id="player" allowfullscreen></iframe>
+        <button id="watch-open-youtube" style="display:none;">Open on YouTube</button>
+
+        <h2 id="video-title"></h2>
+
+        <div id="video-channel-row">
+          <img id="video-channel-avatar" src="" alt="Channel avatar">
+          <div id="video-channel-name"></div>
+          <button id="watch-sub-btn" class="sub-btn">Subscribe</button>
+        </div>
+
+        <div id="like-bar">
+          <button id="like-btn" class="like-btn">👍 Like</button>
+          <button id="dislike-btn" class="like-btn">👎 Dislike</button>
+          <button id="fullscreen-btn">⛶ Fullscreen</button>
+        </div>
+
+        <p id="video-description"></p>
+      </div>
+
+      <div id="sidebar">
+        <h3>Recommended</h3>
+        <div id="recommendations"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API_KEY = "AIzaSyBroBtc7nzeL3ZefXhh3Xbo1ivhoOTqQyg";
+
+let subs = JSON.parse(localStorage.getItem("subs") || "{}");
+let likes = JSON.parse(localStorage.getItem("likes") || "{}");
+let dislikes = JSON.parse(localStorage.getItem("dislikes") || "{}");
+
+function save() {
+  localStorage.setItem("subs", JSON.stringify(subs));
+  localStorage.setItem("likes", JSON.stringify(likes));
+  localStorage.setItem("dislikes", JSON.stringify(dislikes));
+}
+
+function hideAllPages() {
+  document.getElementById("main-page").style.display = "none";
+  document.getElementById("watch-page").style.display = "none";
+  document.getElementById("subs-page").style.display = "none";
+  document.getElementById("channel-page").style.display = "none";
+}
+
+function showMain() {
+  hideAllPages();
+  document.getElementById("main-page").style.display = "block";
+}
+
+function showSubsPage() {
+  hideAllPages();
+  document.getElementById("subs-page").style.display = "block";
+  renderSubs();
+}
+
+function showWatchPage() {
+  hideAllPages();
+  document.getElementById("watch-page").style.display = "block";
+}
+
+function showChannelPage() {
+  hideAllPages();
+  document.getElementById("channel-page").style.display = "block";
+}
+
+document.getElementById("home-btn").onclick = () => {
+  clearSearchView();
+  loadHome();
+};
+document.getElementById("home-view").onclick = () => {
+  clearSearchView();
+  loadHome();
+};
+document.getElementById("sub-view").onclick = showSubsPage;
+
+document.getElementById("search-btn").onclick = () => {
+  const q = document.getElementById("search-box").value.trim();
+  if (q) search(q);
+};
+document.getElementById("search-box").addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const q = e.target.value.trim();
+    if (q) search(q);
+  }
+});
+
+document.getElementById("fullscreen-btn").onclick = () => {
+  const p = document.getElementById("player");
+  if (p.requestFullscreen) p.requestFullscreen();
+};
+
+function makeDraggableRow(row) {
+  let isDown = false;
+  let startX;
+  let scrollLeft;
+
+  row.addEventListener("mousedown", (e) => {
+    isDown = true;
+    startX = e.pageX - row.offsetLeft;
+    scrollLeft = row.scrollLeft;
+  });
+  row.addEventListener("mouseleave", () => { isDown = false; });
+  row.addEventListener("mouseup", () => { isDown = false; });
+  row.addEventListener("mousemove", (e) => {
+    if (!isDown) return;
+    e.preventDefault();
+    const x = e.pageX - row.offsetLeft;
+    const walk = (x - startX) * 1.2;
+    row.scrollLeft = scrollLeft - walk;
+  });
+
+  row.addEventListener("touchstart", (e) => {
+    isDown = true;
+    startX = e.touches[0].pageX - row.offsetLeft;
+    scrollLeft = row.scrollLeft;
+  }, { passive:true });
+  row.addEventListener("touchend", () => { isDown = false; });
+  row.addEventListener("touchmove", (e) => {
+    if (!isDown) return;
+    const x = e.touches[0].pageX - row.offsetLeft;
+    const walk = (x - startX) * 1.2;
+    row.scrollLeft = scrollLeft - walk;
+  }, { passive:false });
+}
+
+function createVideoCard(info) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const img = document.createElement("img");
+  img.className = "thumb";
+  img.src = info.thumb;
+
+  const content = document.createElement("div");
+  content.className = "card-content";
+
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = info.title;
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = info.channelTitle;
+  meta.style.cursor = "pointer";
+
+  meta.onclick = (e) => {
+    e.stopPropagation();
+    if (info.channelId) openChannel(info.channelId);
+  };
+
+  content.appendChild(title);
+  content.appendChild(meta);
+  card.appendChild(img);
+  card.appendChild(content);
+
+  card.onclick = () => loadWatch(info.videoId);
+
+  return card;
+}
+
+async function loadTrending() {
+  const grid = document.getElementById("trending-grid");
+  grid.innerHTML = "<div style='color:#aaa;font-size:13px;'>Loading trending...</div>";
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&maxResults=24&regionCode=US&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    grid.innerHTML = "";
+    data.items.forEach(item => {
+      const card = createVideoCard({
+        videoId: item.id,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumb: item.snippet.thumbnails.medium.url,
+        channelId: item.snippet.channelId
+      });
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    grid.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load trending.</div>";
+  }
+}
+
+async function loadSubsRows() {
+  const container = document.getElementById("subs-rows");
+  container.innerHTML = "";
+
+  const ids = Object.keys(subs);
+  if (ids.length === 0) {
+    container.innerHTML = "<p style='color:#aaa;font-size:13px;'>No subscriptions yet. Subscribe to channels from search, watch, or channel pages.</p>";
+    return;
+  }
+
+  for (const cid of ids) {
+    const ch = subs[cid];
+    const section = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = ch.title || "Channel";
+    title.style.margin = "16px 0 8px";
+    title.style.fontSize = "16px";
+    title.style.cursor = "pointer";
+    title.onclick = () => openChannel(cid);
+
+    const rowWrap = document.createElement("div");
+    rowWrap.className = "row-container";
+    const row = document.createElement("div");
+    row.className = "video-row";
+
+    rowWrap.appendChild(row);
+    section.appendChild(title);
+    section.appendChild(rowWrap);
+    container.appendChild(section);
+
+    try {
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${cid}&order=date&type=video&maxResults=8&key=${API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      row.innerHTML = "";
+      data.items.forEach(item => {
+        const card = createVideoCard({
+          videoId: item.id.videoId,
+          title: item.snippet.title,
+          channelTitle: item.snippet.channelTitle,
+          thumb: item.snippet.thumbnails.medium.url,
+          channelId: item.snippet.channelId
+        });
+        row.appendChild(card);
+      });
+      makeDraggableRow(row);
+    } catch (e) {
+      row.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load channel videos.</div>";
+    }
+  }
+}
+
+function clearSearchView() {
+  document.getElementById("search-section-title").style.display = "none";
+  document.getElementById("search-grid").style.display = "none";
+  document.getElementById("trending-title").style.display = "block";
+  document.getElementById("trending-grid").style.display = "grid";
+  document.getElementById("subs-rows").style.display = "block";
+}
+
+async function search(q) {
+  showMain();
+  document.getElementById("trending-title").style.display = "none";
+  document.getElementById("trending-grid").style.display = "none";
+  document.getElementById("subs-rows").style.display = "none";
+
+  const title = document.getElementById("search-section-title");
+  const grid = document.getElementById("search-grid");
+  title.style.display = "block";
+  title.textContent = `Search Results for "${q}"`;
+  grid.style.display = "grid";
+  grid.innerHTML = "<div style='color:#aaa;font-size:13px;'>Searching...</div>";
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=30&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    grid.innerHTML = "";
+    data.items.forEach(item => {
+      const card = createVideoCard({
+        videoId: item.id.videoId,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumb: item.snippet.thumbnails.medium.url,
+        channelId: item.snippet.channelId
+      });
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    grid.innerHTML = "<div style='color:#f88;font-size:13px;'>Search failed.</div>";
+  }
+}
+
+async function loadWatch(vid) {
+  showWatchPage();
+  const player = document.getElementById("player");
+  const openBtn = document.getElementById("watch-open-youtube");
+  player.src = `https://www.youtube.com/embed/${vid}`;
+  openBtn.style.display = "inline-block";
+  openBtn.onclick = () => {
+    window.open(`https://www.youtube.com/watch?v=${vid}`, "_blank");
+  };
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${vid}&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.items || !data.items[0]) throw new Error("No video info");
+    const info = data.items[0].snippet;
+
+    document.getElementById("video-title").textContent = info.title;
+    document.getElementById("video-description").textContent = info.description || "";
+
+    document.getElementById("video-channel-name").textContent = info.channelTitle;
+    document.getElementById("video-channel-name").onclick = () => openChannel(info.channelId);
+
+    setupLikes(vid);
+    await setupWatchChannelInfo(info.channelId, info.channelTitle);
+    loadRecs(vid);
+  } catch (e) {
+    document.getElementById("video-title").textContent = "Failed to load video info.";
+    document.getElementById("video-description").textContent = "";
+    document.getElementById("video-channel-name").textContent = "";
+  }
+}
+
+function setupLikes(vid) {
+  const likeBtn = document.getElementById("like-btn");
+  const dislikeBtn = document.getElementById("dislike-btn");
+
+  likeBtn.classList.toggle("active", !!likes[vid]);
+  dislikeBtn.classList.toggle("active", !!dislikes[vid]);
+
+  likeBtn.onclick = () => {
+    likes[vid] = !likes[vid];
+    if (likes[vid]) delete dislikes[vid];
+    save();
+    setupLikes(vid);
+  };
+
+  dislikeBtn.onclick = () => {
+    dislikes[vid] = !dislikes[vid];
+    if (dislikes[vid]) delete likes[vid];
+    save();
+    setupLikes(vid);
+  };
+}
+
+async function setupWatchChannelInfo(channelId, channelTitle) {
+  const avatarImg = document.getElementById("video-channel-avatar");
+  avatarImg.src = "";
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${channelId}&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.items && data.items[0]) {
+      const ch = data.items[0];
+      const thumb = ch.snippet.thumbnails && (ch.snippet.thumbnails.high || ch.snippet.thumbnails.default);
+      if (thumb) avatarImg.src = thumb.url;
+    }
+  } catch (e) {
+    // fallback: leave default
+  }
+  setupSubButton(document.getElementById("watch-sub-btn"), channelId, channelTitle);
+}
+
+function setupSubButton(btn, channelId, channelTitle) {
+  function update() {
+    if (subs[channelId]) {
+      btn.textContent = "Subscribed";
+      btn.classList.add("subscribed");
+    } else {
+      btn.textContent = "Subscribe";
+      btn.classList.remove("subscribed");
+    }
+  }
+  btn.onclick = () => {
+    if (subs[channelId]) {
+      delete subs[channelId];
+    } else {
+      subs[channelId] = { id: channelId, title: channelTitle };
+    }
+    save();
+    update();
+  };
+  update();
+}
+
+async function loadRecs(vid) {
+  const box = document.getElementById("recommendations");
+  box.innerHTML = "<div style='color:#aaa;font-size:13px;'>Loading recommendations...</div>";
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&relatedToVideoId=${vid}&maxResults=20&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.items || data.items.length === 0) throw new Error("No recs");
+
+    box.innerHTML = "";
+    data.items.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "rec-card";
+
+      const img = document.createElement("img");
+      img.className = "rec-thumb";
+      img.src = item.snippet.thumbnails.medium.url;
+
+      const info = document.createElement("div");
+      info.className = "rec-info";
+
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = item.snippet.title;
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = item.snippet.channelTitle;
+
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      card.appendChild(img);
+      card.appendChild(info);
+
+      card.onclick = () => loadWatch(item.id.videoId);
+      box.appendChild(card);
+    });
+  } catch (e) {
+    box.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load recommendations. Showing trending instead.</div>";
+    loadTrendingSidebar(box);
+  }
+}
+
+async function loadTrendingSidebar(box) {
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&maxResults=10&regionCode=US&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    data.items.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "rec-card";
+
+      const img = document.createElement("img");
+      img.className = "rec-thumb";
+      img.src = item.snippet.thumbnails.medium.url;
+
+      const info = document.createElement("div");
+      info.className = "rec-info";
+
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = item.snippet.title;
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = item.snippet.channelTitle;
+
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      card.appendChild(img);
+      card.appendChild(info);
+
+      card.onclick = () => loadWatch(item.id);
+      box.appendChild(card);
+    });
+  } catch (e) {
+    box.innerHTML += "<div style='color:#f88;font-size:13px;'> Also failed to load trending.</div>";
+  }
+}
+
+function renderSubs() {
+  const box = document.getElementById("subs-list");
+  box.innerHTML = "";
+
+  const list = Object.values(subs);
+  if (list.length === 0) {
+    box.innerHTML = "<p style='color:#aaa;font-size:13px;'>You are not subscribed to any channels yet.</p>";
+    return;
+  }
+
+  list.forEach(ch => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const content = document.createElement("div");
+    content.className = "card-content";
+
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = ch.title;
+    title.style.cursor = "pointer";
+    title.onclick = () => openChannel(ch.id);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = ch.id;
+
+    const btn = document.createElement("button");
+    btn.className = "sub-btn subscribed";
+    btn.textContent = "Unsubscribe";
+
+    btn.onclick = () => {
+      delete subs[ch.id];
+      save();
+      renderSubs();
+    };
+
+    content.appendChild(title);
+    content.appendChild(meta);
+    content.appendChild(btn);
+    card.appendChild(content);
+    box.appendChild(card);
+  });
+}
+
+async function openChannel(channelId) {
+  showChannelPage();
+
+  const banner = document.getElementById("channel-banner");
+  const avatar = document.getElementById("channel-avatar");
+  const nameEl = document.getElementById("channel-name");
+  const descEl = document.getElementById("channel-description");
+  const uploadsGrid = document.getElementById("channel-uploads-grid");
+  const subBtn = document.getElementById("channel-sub-btn");
+
+  banner.style.backgroundImage = "";
+  avatar.src = "";
+  nameEl.textContent = "Loading channel...";
+  descEl.textContent = "";
+  uploadsGrid.innerHTML = "<div style='color:#aaa;font-size:13px;'>Loading uploads...</div>";
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,brandingSettings&id=${channelId}&key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.items || !data.items[0]) throw new Error("No channel");
+
+    const ch = data.items[0];
+    nameEl.textContent = ch.snippet.title;
+    descEl.textContent = ch.snippet.description || "";
+
+    const thumb = ch.snippet.thumbnails && (ch.snippet.thumbnails.high || ch.snippet.thumbnails.default);
+    if (thumb) avatar.src = thumb.url;
+
+    const branding = ch.brandingSettings && ch.brandingSettings.image;
+    if (branding && branding.bannerExternalUrl) {
+      banner.style.backgroundImage = `url(${branding.bannerExternalUrl})`;
+    } else {
+      banner.style.backgroundImage = "";
+    }
+
+    setupSubButton(subBtn, channelId, ch.snippet.title);
+  } catch (e) {
+    nameEl.textContent = "Failed to load channel.";
+    descEl.textContent = "";
+  }
+
+  try {
+    const url2 = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=24&key=${API_KEY}`;
+    const res2 = await fetch(url2);
+    const data2 = await res2.json();
+    uploadsGrid.innerHTML = "";
+    if (!data2.items || data2.items.length === 0) {
+      uploadsGrid.innerHTML = "<div style='color:#aaa;font-size:13px;'>No uploads found.</div>";
+      return;
+    }
+    data2.items.forEach(item => {
+      const card = createVideoCard({
+        videoId: item.id.videoId,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumb: item.snippet.thumbnails.medium.url,
+        channelId: item.snippet.channelId
+      });
+      uploadsGrid.appendChild(card);
+    });
+  } catch (e) {
+    uploadsGrid.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load uploads.</div>";
+  }
+}
+
+async function loadHome() {
+  showMain();
+  clearSearchView();
+  loadTrending();
+  loadSubsRows();
+}
+
+// Initial load
+loadHome();
+</script>
+
+</body>
+</html>
