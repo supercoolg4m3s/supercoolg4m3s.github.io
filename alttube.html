@@ -220,7 +220,7 @@ const API_KEYS = [
   "AIzaSyAz6t_CEVJ-1gWKhPeRNoiWiolVu9FXGJ4"
 ];
 
-let keyIndex = 0;
+let keyIndex = 1;
 
 function getApiKey() {
   const key = API_KEYS[keyIndex];
@@ -613,18 +613,19 @@ function setupSubButton(btn, channelId, channelTitle) {
   update();
 }
 
-async function loadRecs(vid) {
+async function loadRecs(videoId) {
   const box = document.getElementById("recommendations");
   box.innerHTML = "<div style='color:#aaa;font-size:13px;'>Loading recommendations...</div>";
 
   try {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&relatedToVideoId=${vid}&maxResults=20&key=${getApiKey()}`;
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&relatedToVideoId=${videoId}&maxResults=20&key=${getApiKey()}`;
     const res = await cachedFetch(url);
     const data = await res.json();
 
     if (!data.items || data.items.length === 0) throw new Error("No recs");
 
     box.innerHTML = "";
+
     data.items.forEach(item => {
       const card = document.createElement("div");
       card.className = "rec-card";
@@ -651,11 +652,12 @@ async function loadRecs(vid) {
       card.appendChild(info);
 
       card.onclick = () => loadWatch(item.id.videoId);
+
       box.appendChild(card);
     });
+
   } catch (e) {
-    box.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load recommendations. Showing trending instead.</div>";
-    loadTrendingSidebar(box);
+    box.innerHTML = "<div style='color:#f88;font-size:13px;'>Failed to load recommendations.</div>";
   }
 }
 
