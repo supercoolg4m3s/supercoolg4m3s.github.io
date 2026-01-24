@@ -234,29 +234,27 @@ function hideAllPages() {
 function showMain() {
   hideAllPages();
   const player = document.getElementById("player");
-  player.src = ``
+  if (player) player.src = "";
   document.getElementById("main-page").style.display = "block";
 }
 
 function showSubsPage() {
   hideAllPages();
   const player = document.getElementById("player");
-  player.src = ``
+  if (player) player.src = "";
   document.getElementById("subs-page").style.display = "block";
   renderSubs();
 }
 
 function showWatchPage() {
   hideAllPages();
-  const player = document.getElementById("player");
-  player.src = ``
   document.getElementById("watch-page").style.display = "block";
 }
 
 function showChannelPage() {
   hideAllPages();
   const player = document.getElementById("player");
-  player.src = ``
+  if (player) player.src = "";
   document.getElementById("channel-page").style.display = "block";
 }
 
