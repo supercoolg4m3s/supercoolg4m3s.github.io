@@ -345,7 +345,7 @@
   const btnOpenConsole = document.getElementById("btnOpenConsole");
   const btnToggleDebug = document.getElementById("btnToggleDebug");
   const btnToggleAudio = document.getElementById("btnToggleAudio");
-
+  
 
 const REWIND_DURATION = 120 * 1000; // 2 minutes in ms
 const REWIND_INTERVAL = 100;        // snapshot every 100ms (10 per second)
@@ -373,44 +373,26 @@ let rewinding = false;
 
 let currentROM = null;
 
-//const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-///const scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
 
-const audioCtx = new AudioContext();
+const audioBufferL = new Float32Array(1024);
+const audioBufferR = new Float32Array(1024);
+let audioPtr = 0;
 
-async function setupAudio() {
-  await audioCtx.audioWorklet.addModule("https://supercoolg4m3s.github.io/nesaudioworklet.js");
+scriptNode.onaudioprocess = e => {
+  const outL = e.outputBuffer.getChannelData(0);
+  const outR = e.outputBuffer.getChannelData(1);
 
-  const nesNode = new AudioWorkletNode(audioCtx, "nes-audio");
-  nesNode.connect(audioCtx.destination);
+  for (let i = 0; i < 1024; i++) {
+    outL[i] = audioBufferL[i] || 0;
+    outR[i] = audioBufferR[i] || 0;
+  }
 
-  // Resume audio context after user interaction
-  document.body.addEventListener("click", () => {
-    audioCtx.resume();
-  }, { once: true });
-}
+  audioPtr = 0;
+};
 
-setupAudio();
-
-
-
-//const audioBufferL = new Float32Array(1024);
-//const audioBufferR = new Float32Array(1024);
-//let audioPtr = 0;
-
-//scriptNode.onaudioprocess = e => {
-//  const outL = e.outputBuffer.getChannelData(0);
-//  const outR = e.outputBuffer.getChannelData(1);
-//
-//  for (let i = 0; i < 1024; i++) {
-//    outL[i] = audioBufferL[i] || 0;
-//    outR[i] = audioBufferR[i] || 0;
-//  }
-//
-//  audioPtr = 0;
-//};
-
-//scriptNode.connect(audioCtx.destination);
+scriptNode.connect(audioCtx.destination);
 
 
 function loadROMIntoNES(binaryString) {
@@ -506,7 +488,11 @@ function processRewind() {
     nes = new jsnes.NES({
   onFrame(frameBuffer) { onFrame(frameBuffer); },
   onAudioSample(left, right) {
-    nesNode.port.postMessage({ left, right });
+    if (audioPtr < 1024) {
+      audioBufferL[audioPtr] = left;
+      audioBufferR[audioPtr] = right;
+      audioPtr++;
+    }
   }
 });
 
