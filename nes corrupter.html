@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>NES Corrupter (JSNES)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000;
+      font-family: sans-serif;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .screen-wrapper {
+      position: relative;
+      flex: 1;
+      background: #000 center center no-repeat;
+      background-size: cover;
+      transition: filter 0.3s ease;
+    }
+
+    .screen-wrapper.wallpaper {
+      background-image: url("https://drive.google.com/uc?export=view&id=1m_3lDmQbrVZyNtov2OANNsq4ExhaHf8O");
+    }
+
+    .screen-wrapper.blurred {
+      filter: blur(6px);
+    }
+    
+    #savePopup {
+  position: absolute;
+  top: -60px;                 /* start off-screen */
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-size: 16px;
+  opacity: 0;
+  transition: all 0.5s ease;  /* smooth slide + fade */
+  pointer-events: none;
+  z-index: 9999;
+}
+
+#savePopup.show {
+  top: 40px;                  /* visible position */
+  opacity: 1;
+}
+
+
+    canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+
+  /* Maintain NES aspect ratio (8:7) */
+  width: auto;
+  height: 100%;
+
+  /* Prevent overflow */
+  max-height: 100%;
+  max-width: 100%;
+
+  image-rendering: pixelated;
+  background: #000;
+  z-index: 1;
+}
+
+
+    .controls {
+      background: #111;
+      border-top: 1px solid #333;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .controls button {
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+
+    .controls button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .controls input[type=range] {
+      width: 150px;
+    }
+
+    .spacer {
+      flex: 1;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .overlay.active {
+      display: flex;
+      pointer-events: auto;
+    }
+
+    .overlay-inner {
+      background: rgba(10, 10, 10, 0.95);
+      border: 1px solid #555;
+      padding: 15px 20px;
+      border-radius: 6px;
+      min-width: 260px;
+      text-align: left;
+      box-shadow: 0 0 20px #000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .overlay h3 {
+      margin: 0 0 6px 0;
+      text-align: center;
+    }
+
+    .slot-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .slot-item {
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .slot-item.selected {
+      background: #333;
+      border-color: #aaa;
+    }
+
+    .overlay-footer {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+
+    .overlay-footer button {
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+
+    .error-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .error-overlay.active {
+      display: flex;
+      pointer-events: auto;
+    }
+
+    .error-box {
+      background: #cc0000;
+      color: #fff;
+      padding: 16px 24px;
+      border-radius: 6px;
+      box-shadow: 0 0 20px #000;
+      max-width: 500px;
+      width: 500px;
+      text-align: center;
+      font-weight: bold;
+      opacity: 0;
+      transform: translateY(-5px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      cursor: pointer;
+    }
+
+    .error-box.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .error-title {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .error-message {
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div id="savePopup">Saved!</div>
+  <div id="screenWrapper" class="screen-wrapper wallpaper">
+    <canvas id="screen" width="256" height="240"></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="btnOpenReset">Open NES</button>
+    <input type="file" id="romFile" accept=".nes" style="display:none">
+
+    <button id="btnCorrupt" disabled>Corrupt</button>
+    <button id="btnAuto" disabled>Auto-Corrupt</button>
+    <span id="autoStatus">Auto: OFF</span>
+
+    <span>Intensity:</span>
+    <input type="range" id="intensity" min="1" max="2000" value="50">
+    <span id="intensityVal">50</span>
+
+    <span>Interval (ms):</span>
+    <input type="range" id="interval" min="20" max="2000" value="200">
+    <span id="intervalVal">200</span>
+
+    <button id="btnCorruptType" disabled>Type: Random Bytes</button>
+
+    <div class="spacer"></div>
+
+    <button id="btnSaveLoad" disabled>Save / Load</button>
+    <button id="btnAdvanced">Advanced</button>
+  </div>
+
+  <!-- Save/Load overlay -->
+  <div id="saveOverlay" class="overlay">
+    <div class="overlay-inner">
+      <h3>Save Slots</h3>
+      <div id="slotList" class="slot-list"></div>
+      <div class="overlay-footer">
+        <button id="btnSaveSlot">Save</button>
+        <div class="overlay-footer-right">
+          <button id="btnLoadSlot">Load</button>
+          <button id="btnCloseOverlay">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced overlay -->
+  <div id="advancedOverlay" class="overlay">
+    <div class="overlay-inner">
+      <h3>Advanced Settings</h3>
+      <div class="slot-list">
+        <div class="slot-item">
+          <span>FPS Cap:</span>
+          <input type="number" id="fpsCap" min="1" max="120" value="30">
+        </div>
+        <div class="slot-item">
+          <button id="btnOpenConsole">Open JavaScript Console</button>
+        </div>
+        <div class="slot-item">
+          <button id="btnToggleDebug">Toggle Debug Info</button>
+        </div>
+        <div class="slot-item">
+          <button id="btnToggleAudio">Toggle Audio</button>
+        </div>
+      </div>
+      <div class="overlay-footer">
+        <button id="btnCloseAdvanced">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error overlay -->
+  <div id="errorOverlay" class="error-overlay">
+    <div id="errorBox" class="error-box">
+      <div class="error-title">⚠ ERROR</div>
+      <div id="errorMessage" class="error-message"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/jsnes/dist/jsnes.js"></script>
+<script>
+  const canvas = document.getElementById("screen");
+  const ctx = canvas.getContext("2d");
+  const screenWrapper = document.getElementById("screenWrapper");
+
+  const btnOpenReset = document.getElementById("btnOpenReset");
+  const romFileInput = document.getElementById("romFile");
+
+  const btnCorrupt = document.getElementById("btnCorrupt");
+  const btnAuto = document.getElementById("btnAuto");
+  const autoStatus = document.getElementById("autoStatus");
+
+  const intensitySlider = document.getElementById("intensity");
+  const intensityVal = document.getElementById("intensityVal");
+
+  const intervalSlider = document.getElementById("interval");
+  const intervalVal = document.getElementById("intervalVal");
+
+  const btnCorruptType = document.getElementById("btnCorruptType");
+  const btnSaveLoad = document.getElementById("btnSaveLoad");
+
+  const saveOverlay = document.getElementById("saveOverlay");
+  const slotList = document.getElementById("slotList");
+  const btnSaveSlot = document.getElementById("btnSaveSlot");
+  const btnLoadSlot = document.getElementById("btnLoadSlot");
+  const btnCloseOverlay = document.getElementById("btnCloseOverlay");
+
+  const errorOverlay = document.getElementById("errorOverlay");
+  const errorBox = document.getElementById("errorBox");
+  const errorMessage = document.getElementById("errorMessage");
+
+  const btnAdvanced = document.getElementById("btnAdvanced");
+  const advancedOverlay = document.getElementById("advancedOverlay");
+  const btnCloseAdvanced = document.getElementById("btnCloseAdvanced");
+  const fpsCapInput = document.getElementById("fpsCap");
+  const btnOpenConsole = document.getElementById("btnOpenConsole");
+  const btnToggleDebug = document.getElementById("btnToggleDebug");
+  const btnToggleAudio = document.getElementById("btnToggleAudio");
+
+
+const REWIND_DURATION = 120 * 1000; // 2 minutes in ms
+const REWIND_INTERVAL = 100;        // snapshot every 100ms (10 per second)
+
+let rewindBuffer = [];
+let lastSnapshotTime = 0;
+let rewinding = false;
+
+
+  let nes = null;
+  let romData = null;
+  let running = false;
+
+  let auto = false;
+  let autoTimer = null;
+
+  const saveSlots = [null, null, null, null, null];
+  let selectedSlot = 0;
+
+  let debugEnabled = false;
+  let audioEnabled = true;
+
+  let fpsCap = 65;
+  let lastFrameTime = 0;
+
+let currentROM = null;
+
+//const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+///const scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
+
+const audioCtx = new AudioContext();
+audioCtx.audioWorklet.addModule("nes-audio-worklet.js");
+
+const nesNode = new AudioWorkletNode(audioCtx, "nes-audio");
+nesNode.connect(audioCtx.destination);
+
+
+//const audioBufferL = new Float32Array(1024);
+//const audioBufferR = new Float32Array(1024);
+//let audioPtr = 0;
+
+//scriptNode.onaudioprocess = e => {
+//  const outL = e.outputBuffer.getChannelData(0);
+//  const outR = e.outputBuffer.getChannelData(1);
+//
+//  for (let i = 0; i < 1024; i++) {
+//    outL[i] = audioBufferL[i] || 0;
+//    outR[i] = audioBufferR[i] || 0;
+//  }
+//
+//  audioPtr = 0;
+//};
+
+//scriptNode.connect(audioCtx.destination);
+
+
+function loadROMIntoNES(binaryString) {
+    currentROM = binaryString;
+    nes.loadROM(binaryString);
+}
+
+function updateRewindSystem() {
+    const now = performance.now();
+
+    // Only snapshot every REWIND_INTERVAL ms
+    if (now - lastSnapshotTime < REWIND_INTERVAL) return;
+    lastSnapshotTime = now;
+
+    // Save state
+    const state = nes.toJSON();
+    rewindBuffer.push({ time: now, state });
+
+    // Remove states older than 2 minutes
+    const cutoff = now - REWIND_DURATION;
+    while (rewindBuffer.length && rewindBuffer[0].time < cutoff) {
+        rewindBuffer.shift();
+    }
+}
+
+let lastFrameBuffer = null;
+
+
+function onFrame(frameBuffer) {
+    lastFrameBuffer = frameBuffer; // store for rewind
+
+    const imageData = ctx.createImageData(256, 240);
+    for (let i = 0; i < frameBuffer.length; i++) {
+        const pixel = frameBuffer[i];
+        imageData.data[i * 4 + 0] = pixel & 0xFF;
+        imageData.data[i * 4 + 1] = (pixel >> 8) & 0xFF;
+        imageData.data[i * 4 + 2] = (pixel >> 16) & 0xFF;
+        imageData.data[i * 4 + 3] = 0xFF;
+    }
+    ctx.putImageData(imageData, 0, 0);
+}
+
+function processRewind() {
+    if (!rewinding) return;
+    if (rewindBuffer.length < 2) return;
+
+    rewindBuffer.pop();
+    const last = rewindBuffer[rewindBuffer.length - 1];
+    nes.fromJSON(last.state);
+
+    // Force a redraw using the last known framebuffer
+    if (lastFrameBuffer) {
+        onFrame(lastFrameBuffer);
+    }
+}
+
+
+
+  function showError(msg) {
+    stopAuto();
+    errorMessage.textContent = msg;
+    screenWrapper.classList.add("blurred");
+    errorOverlay.classList.add("active");
+    requestAnimationFrame(() => {
+      errorBox.classList.add("visible");
+    });
+  }
+
+  function hideError() {
+    errorBox.classList.remove("visible");
+    setTimeout(() => {
+      errorOverlay.classList.remove("active");
+      screenWrapper.classList.remove("blurred");
+    }, 200);
+  }
+
+  function showSavePopup(text = "Saved!") {
+    const popup = document.getElementById("savePopup");
+    popup.textContent = text;
+
+    popup.classList.add("show");
+
+    setTimeout(() => {
+        popup.classList.remove("show");
+    }, 2000); // stays for 2 seconds
+}
+
+
+  errorBox.addEventListener("click", hideError);
+
+  function initNES() {
+    if (nes) return;
+    nes = new jsnes.NES({
+  onFrame(frameBuffer) { onFrame(frameBuffer); },
+  onAudioSample(left, right) {
+    nesNode.port.postMessage({ left, right });
+  }
+});
+
+  }
+
+  function startLoop() {
+    if (running || !nes) return;
+    running = true;
+
+    function frame(timestamp) {
+      if (!running) return;
+      const delta = timestamp - lastFrameTime;
+      const frameDuration = 1000 / fpsCap;
+
+      if (delta >= frameDuration) {
+        lastFrameTime = timestamp;
+        try {
+          if (rewinding) {
+ processRewind();
+ } 
+else {
+ nes.frame();
+ updateRewindSystem();
+ }
+        } catch (e) {
+          showError("Emulator error:\n" + e.message);
+          running = false;
+          return;
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  function binaryString(u8) {
+    let s = "";
+    for (let i = 0; i < u8.length; i++) {
+      s += String.fromCharCode(u8[i]);
+    }
+    return s;
+  }
+
+  function isValidNESRom(u8) {
+    return (
+      u8.length > 16 &&
+      u8[0] === 0x4E &&
+      u8[1] === 0x45 &&
+      u8[2] === 0x53 &&
+      u8[3] === 0x1A
+    );
+  }
+
+  function loadROMIntoNES() {
+    if (!nes) initNES();
+    nes.loadROM(binaryString(romData));
+    startLoop();
+  }
+
+  function stopAuto() {
+    auto = false;
+    autoStatus.textContent = "Auto: OFF";
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+  }
+
+  function resetToDefaultState() {
+    stopAuto();
+    autoStatus.textContent = "Auto: OFF";
+    romData = null;
+
+    if (nes && nes.stop) nes.stop();
+    nes = null;
+
+    running = false;
+    btnOpenReset.textContent = "Open NES";
+    screenWrapper.classList.add("wallpaper");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    btnCorrupt.disabled = true;
+    btnAuto.disabled = true;
+    btnSaveLoad.disabled = true;
+    btnCorruptType.disabled = true;
+  }
+
+  romFileInput.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = new Uint8Array(ev.target.result);
+        if (!isValidNESRom(data)) {
+          showError("Selected file is not a valid NES ROM.");
+          return;
+        }
+
+        romData = data;
+        initNES();
+        loadROMIntoNES();
+
+        btnOpenReset.textContent = "Reset";
+        screenWrapper.classList.remove("wallpaper");
+
+        btnCorrupt.disabled = false;
+        btnAuto.disabled = false;
+        btnSaveLoad.disabled = false;
+        btnCorruptType.disabled = false;
+      } catch (err) {
+        showError("Failed to load NES file:\n" + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  const DEFAULT_ROM_URL =
+    "https://raw.githubusercontent.com/vmartinv/nek/master/roms/Super%20Mario%20Bros.%20(Japan,%20USA).nes";
+
+  async function loadDefaultROM() {
+    try {
+      const res = await fetch(DEFAULT_ROM_URL);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const buf = await res.arrayBuffer();
+      const data = new Uint8Array(buf);
+
+      if (!isValidNESRom(data)) {
+        showError("Default ROM is not a valid NES file.");
+        return;
+      }
+
+      romData = data;
+      initNES();
+      loadROMIntoNES();
+
+      btnOpenReset.textContent = "Reset";
+      screenWrapper.classList.remove("wallpaper");
+
+      btnCorrupt.disabled = false;
+      btnAuto.disabled = false;
+      btnSaveLoad.disabled = false;
+      btnCorruptType.disabled = false;
+    } catch (e) {
+      showError("Failed to load default ROM:\n" + e.message);
+    }
+  }
+
+  loadDefaultROM();
+
+  const keyMap = {
+    ArrowUp: 4,
+    ArrowDown: 5,
+    ArrowLeft: 6,
+    ArrowRight: 7,
+    z: 0,
+    x: 1,
+    Shift: 2,
+    Enter: 3
+  };
+
+  document.addEventListener("keydown", e => {
+    if (!nes) return;
+    const b = keyMap[e.key];
+    if (b !== undefined) {
+      nes.buttonDown(1, b);
+      e.preventDefault();
+    }
+  });
+
+  document.addEventListener("keyup", e => {
+    if (!nes) return;
+    const b = keyMap[e.key];
+    if (b !== undefined) {
+      nes.buttonUp(1, b);
+      e.preventDefault();
+    }
+  });
+
+  document.addEventListener("mousedown", () => {
+    if (nes && nes.audio && nes.audio.ctx && nes.audio.ctx.state !== "running") {
+      audioCtx.resume();
+    }
+  });
+
+  document.addEventListener("keydown", () => {
+    if (nes && nes.audio && nes.audio.ctx && nes.audio.ctx.state !== "running") {
+      audioCtx.resume();
+    }
+  });
+
+  const corruptionTypes = [
+    "Random Bytes",
+    "Bit Flip",
+    "ByteSwap",
+    "CheckerBoard",
+    "TextureVomit",
+    "EveryByte",
+    "World Level Changer",
+    "XOR Corruption",
+    "StatChanger",
+    "ByteSoundSwap"
+  ];
+
+  let currentCorruptTypeIndex = 0;
+
+  function updateCorruptTypeButton() {
+    btnCorruptType.textContent =
+      "Type: " + corruptionTypes[currentCorruptTypeIndex];
+  }
+  updateCorruptTypeButton();
+
+  function safeCorrupt(ram, intensity, fn) {
+    const SAFE = [
+      [0x0200, 0x1FFF],
+      [0x0800, 0x3FFF],
+      [0x6000, 0x7FFF],
+      [0x8000, 0xFF00]
+    ];
+    for (let i = 0; i < intensity; i++) {
+      const r = SAFE[Math.floor(Math.random() * SAFE.length)];
+      const idx = r[0] + Math.floor(Math.random() * (r[1] - r[0]));
+      if (idx < ram.length) fn(ram, idx);
+    }
+  }
+
+  function corruptRandomBytes(ram, intensity) {
+    safeCorrupt(ram, intensity, (ram, idx) => {
+      ram[idx] = Math.floor(Math.random() * 256);
+    });
+  }
+
+  function corruptBitFlip(ram, intensity) {
+    safeCorrupt(ram, intensity, (ram, idx) => {
+      const bit = 1 << (Math.floor(Math.random() * 8));
+      ram[idx] ^= bit;
+    });
+  }
+
+  function corruptByteSwap(ram, intensity) {
+    safeCorrupt(ram, intensity, (ram, idxA) => {
+      const idxB = Math.floor(Math.random() * ram.length);
+      const tmp = ram[idxA];
+      ram[idxA] = ram[idxB];
+      ram[idxB] = tmp;
+    });
+  }
+
+  function corruptCheckerBoard(ram, intensity) {
+    safeCorrupt(ram, intensity, (ram, idx) => {
+      ram[idx] = (idx % 2 === 0) ? 0x00 : 0xFF;
+    });
+  }
+
+  function corruptTextureVomit(ram, intensity) {
+    const pattern = [0x00, 0xFF, 0xAA, 0x55];
+    safeCorrupt(ram, intensity, (ram, idx) => {
+      ram[idx] = pattern[idx % pattern.length];
+    });
+  }
+
+  function corruptEveryByte(ram) {
+    for (let i = 0; i < ram.length; i++) {
+      ram[i] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  function corruptWorldLevel(ram, intensity) {
+    const start = 0x6000;
+    const end = 0x7FFF;
+    for (let i = 0; i < intensity; i++) {
+      const idx = start + Math.floor(Math.random() * (end - start + 1));
+      if (idx < ram.length) {
+        ram[idx] = Math.floor(Math.random() * 256);
+      }
+    }
+  }
+
+  function corruptXOR(ram, intensity) {
+    safeCorrupt(ram, intensity, (ram, idx) => {
+      const mask = Math.floor(Math.random() * 256);
+      ram[idx] ^= mask;
+    });
+  }
+
+  function corruptStatChanger(ram) {
+    for (let i = 0x0000; i <= 0x00FF && i < ram.length; i++) {
+      ram[i] = Math.floor(Math.random() * 256);
+    }
+    for (let i = 0x0200; i <= 0x07FF && i < ram.length; i++) {
+      ram[i] = Math.floor(Math.random() * 256);
+    }
+    for (let i = 0x6000; i <= 0x7FFF && i < ram.length; i++) {
+      ram[i] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  function corruptByteSoundSwap(ram, intensity) {
+    for (let i = 0; i < intensity; i++) {
+      const idx = 0x4000 + Math.floor(Math.random() * 0x18);
+      if (idx < ram.length) {
+        ram[idx] = Math.floor(Math.random() * 256);
+      }
+    }
+  }
+
+  function corruptMemory() {
+    if (!nes) return;
+    const intensity = parseInt(intensitySlider.value, 10);
+    const ram = nes.cpu.mem;
+    const type = corruptionTypes[currentCorruptTypeIndex];
+
+    try {
+      switch (type) {
+        case "Random Bytes":
+          corruptRandomBytes(ram, intensity);
+          break;
+        case "Bit Flip":
+          corruptBitFlip(ram, intensity);
+          break;
+        case "ByteSwap":
+          corruptByteSwap(ram, intensity);
+          break;
+        case "CheckerBoard":
+          corruptCheckerBoard(ram, intensity);
+          break;
+        case "TextureVomit":
+          corruptTextureVomit(ram, intensity);
+          break;
+        case "EveryByte":
+          corruptEveryByte(ram);
+          break;
+        case "World Level Changer":
+          corruptWorldLevel(ram, intensity);
+          break;
+        case "XOR Corruption":
+          corruptXOR(ram, intensity);
+          break;
+        case "StatChanger":
+          corruptStatChanger(ram);
+          break;
+        case "ByteSoundSwap":
+          corruptByteSoundSwap(ram, intensity);
+          break;
+      }
+    } catch (e) {
+      showError("Corruption error:\n" + e.message);
+    }
+  }
+
+  function startAuto() {
+    if (auto || !nes) return;
+    auto = true;
+    autoStatus.textContent = "Auto: ON";
+    const interval = parseInt(intervalSlider.value, 10);
+    autoTimer = setInterval(corruptMemory, interval);
+  }
+
+  function buildSlotUI() {
+  slotList.innerHTML = "";
+  const base = getRomName();
+
+  for (let i = 0; i < 5; i++) {
+    const key = `${base}_Slot${i + 1}`;
+    const exists = localStorage.getItem(key) !== null;
+
+    const item = document.createElement("div");
+    item.className = "slot-item" + (i === selectedSlot ? " selected" : "");
+    item.textContent = `Slot ${i + 1}` + (exists ? " ✓" : "");
+
+    item.addEventListener("click", () => {
+      selectedSlot = i;
+      buildSlotUI();
+    });
+
+    slotList.appendChild(item);
+  }
+}
+
+  
+  function crc32(buf) {
+  let table = crc32.table;
+  if (!table) {
+    table = crc32.table = [];
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) {
+        c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      }
+      table[i] = c;
+    }
+  }
+
+  let crc = -1;
+  for (let i = 0; i < buf.length; i++) {
+    crc = (crc >>> 8) ^ table[(crc ^ buf[i]) & 0xFF];
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+
+  function getRomName() {
+  if (!romData) return "NO_ROM";
+
+  const hash = crc32(romData).toString(16).toUpperCase();
+  return "ROM_" + hash;
+}
+
+document.addEventListener("keydown", e => {
+    if (e.key === "r" || e.key === "R") {
+        //rewinding = true;
+    }
+});
+
+document.addEventListener("keyup", e => {
+    if (e.key === "r" || e.key === "R") {
+        //rewinding = false;
+    }
+});
+
+
+  btnSaveSlot.addEventListener("click", () => {
+  if (!nes) return;
+
+  const key = `${getRomName()}_Slot${selectedSlot + 1}`;
+  const state = nes.toJSON();
+
+  localStorage.setItem(key, JSON.stringify(state));
+  console.log("Saved state:", key);
+  buildSlotUI();
+});
+
+
+
+
+
+  btnLoadSlot.addEventListener("click", () => {
+  if (!nes) return;
+
+  const key = `${getRomName()}_Slot${selectedSlot + 1}`;
+  const saved = localStorage.getItem(key);
+
+  if (!saved) {
+    showError("No save exists for this slot.");
+    return;
+  }
+
+  const state = JSON.parse(saved);
+
+  // IMPORTANT: do NOT recreate nes, do NOT reload ROM
+  nes.fromJSON(state);
+
+  console.log("Loaded state:", key);
+  buildSlotUI();
+});
+
+
+
+
+
+
+  function openSaveOverlay() {
+    buildSlotUI()
+    screenWrapper.classList.add("blurred");
+    saveOverlay.classList.add("active");
+  }
+
+  function closeSaveOverlay() {
+    saveOverlay.classList.remove("active");
+    screenWrapper.classList.remove("blurred");
+  }
+
+  btnSaveLoad.addEventListener("click", openSaveOverlay);
+  btnCloseOverlay.addEventListener("click", closeSaveOverlay);
+  
+  document.addEventListener("keydown", e => {
+  if (!e.code.startsWith("Digit")) return;
+
+  const digit = parseInt(e.code.replace("Digit", ""));
+  if (digit < 1 || digit > 5) return;
+
+  const slot = digit - 1;
+  selectedSlot = slot;
+  const key = `${getRomName()}_Slot${slot + 1}`;
+
+  // SHIFT + number → SAVE
+  if (e.shiftKey) {
+    if (!nes) return;
+
+    const state = nes.toJSON();
+    localStorage.setItem(key, JSON.stringify(state));
+
+    showSavePopup(`Saved Slot ${slot + 1}`);
+    console.log("Saved state:", key);
+    e.preventDefault();
+    return;
+  }
+
+  // number alone → LOAD
+  const saved = localStorage.getItem(key);
+  if (!saved) {
+    showError("No save exists for this slot.");
+    return;
+  }
+
+  const state = JSON.parse(saved);
+  nes.fromJSON(state);
+
+  showSavePopup(`Loaded Slot ${slot + 1}`);
+  console.log("Loaded state:", key);
+  e.preventDefault();
+});
+
+
+
+
+
+  buildSlotUI();
+
+  btnAdvanced.addEventListener("click", () => {
+    advancedOverlay.classList.add("active");
+    screenWrapper.classList.add("blurred");
+  });
+
+  btnCloseAdvanced.addEventListener("click", () => {
+    advancedOverlay.classList.remove("active");
+    screenWrapper.classList.remove("blurred");
+  });
+
+  fpsCapInput.addEventListener("input", () => {
+    fpsCap = parseInt(fpsCapInput.value, 10);
+  });
+
+  btnOpenConsole.addEventListener("click", () => {
+    console.log(
+      "%cOpen your browser’s developer tools (F12 or Ctrl+Shift+I).",
+      "color:#0f0;font-size:16px;"
+    );
+    alert("Check the console — instructions printed there.");
+  });
+
+  btnToggleDebug.addEventListener("click", () => {
+    debugEnabled = !debugEnabled;
+    console.log("Debug mode:", debugEnabled);
+  });
+
+  btnToggleAudio.addEventListener("click", () => {
+    audioEnabled = !audioEnabled;
+    if (nes && nes.audio && nes.audio.ctx) {
+      nes.audio.ctx[audioEnabled ? "resume" : "suspend"]();
+    }
+  });
+
+  btnOpenReset.addEventListener("click", () => {
+    if (!romData) {
+      romFileInput.click();
+    } else {
+      resetToDefaultState();
+    }
+  });
+
+  btnCorrupt.addEventListener("click", corruptMemory);
+
+  btnAuto.addEventListener("click", () => {
+    if (auto) stopAuto();
+    else startAuto();
+  });
+
+  intensitySlider.addEventListener("input", e => {
+    intensityVal.textContent = e.target.value;
+  });
+
+  intervalSlider.addEventListener("input", e => {
+    intervalVal.textContent = e.target.value;
+  });
+
+  btnCorruptType.addEventListener("click", () => {
+    currentCorruptTypeIndex =
+      (currentCorruptTypeIndex + 1) % corruptionTypes.length;
+    updateCorruptTypeButton();
+  });
+</script>
+</body>
+</html>
