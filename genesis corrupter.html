@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Genesis Corrupter</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    #screen {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #000;
+      max-width: 100%;
+      max-height: 100%;
+    }
+    #controls {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-sizing: border-box;
+      border-top: 1px solid #333;
+    }
+    #controls button,
+    #controls select,
+    #controls input[type="range"] {
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+    #controls button:disabled {
+      opacity: 0.4;
+    }
+    #intensity-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #ccc;
+      font-size: 11px;
+    }
+    #intensity {
+      width: 140px;
+    }
+    #status {
+      position: fixed;
+      left: 8px;
+      bottom: 40px;
+      font-size: 11px;
+      color: #aaa;
+      white-space: pre-line;
+      pointer-events: none;
+      max-width: 40%;
+    }
+    #hint {
+      position: fixed;
+      right: 8px;
+      bottom: 40px;
+      font-size: 11px;
+      color: #666;
+      text-align: right;
+      max-width: 40%;
+    }
+  </style>
+</head>
+<body>
+<div id="root">
+  <canvas id="screen" width="320" height="224"></canvas>
+</div>
+
+<div id="controls">
+  <button id="btn-open-reset" disabled>Open ROM</button>
+  <input type="file" id="rom-file" accept=".bin,.md,.gen" style="display:none">
+
+  <button id="btn-corrupt" disabled>Corrupt</button>
+  <button id="btn-auto" disabled>Auto: Off</button>
+
+  <div id="intensity-wrapper">
+    <span>Intensity</span>
+    <input type="range" id="intensity" min="1" max="500" value="50">
+    <span id="intensity-label">50</span>
+  </div>
+
+  <select id="corrupt-type" disabled>
+    <option>Random Bytes</option>
+    <option>Bit Flip</option>
+    <option>XOR</option>
+    <option>Byte Swap</option>
+  </select>
+</div>
+
+<div id="status">Loading core…</div>
+<div id="hint">Arrows = D‑Pad · Z = B · X = A · C = C · Enter = Start</div>
+
+<!-- WASM locator must be defined before the core script -->
+<script>
+  var Module = {
+    locateFile: function (path) {
+      if (path.endsWith(".wasm")) {
+        return "https://github.com/titaniumnetwork-dev/Ludicrous/raw/refs/heads/main/public/webretro/cores/genesis_plus_gx_libretro.wasm";
+      }
+      return path;
+    }
+  };
+</script>
+
+<!-- Core JS (includes WebRetro runtime) -->
+<script src="https://github.com/titaniumnetwork-dev/Ludicrous/raw/refs/heads/main/public/webretro/cores/genesis_plus_gx_libretro.js"></script>
+
+<script>
+  const canvas = document.getElementById("screen");
+  const ctx = canvas.getContext("2d");
+  let imageData = ctx.createImageData(canvas.width, canvas.height);
+
+  const btnOpenReset = document.getElementById("btn-open-reset");
+  const romFileInput = document.getElementById("rom-file");
+  const btnCorrupt = document.getElementById("btn-corrupt");
+  const btnAuto = document.getElementById("btn-auto");
+  const intensitySlider = document.getElementById("intensity");
+  const intensityLabel = document.getElementById("intensity-label");
+  const corruptTypeSelect = document.getElementById("corrupt-type");
+  const statusEl = document.getElementById("status");
+
+  let romData = null;
+  let running = false;
+  let autoCorrupt = false;
+  let lastFrameTime = 0;
+  let fpsCap = 60;
+
+  function setStatus(msg) {
+    statusEl.textContent = msg || "";
+  }
+
+  // Attach canvas to WebRetro (Ludicrous core exposes global WebRetro)
+  if (window.WebRetro && WebRetro.setCanvas) {
+    WebRetro.setCanvas(canvas);
+  }
+
+  // Video callback from WebRetro
+  if (window.WebRetro) {
+    WebRetro.onFrame = function (buffer, width, height) {
+      if (!buffer) return;
+      if (width !== canvas.width || height !== canvas.height) {
+        canvas.width = width;
+        canvas.height = height;
+        imageData = ctx.createImageData(width, height);
+      }
+      const dst = imageData.data;
+      const len = Math.min(dst.length, buffer.length);
+      for (let i = 0; i < len; i++) {
+        dst[i] = buffer[i];
+      }
+    };
+  }
+
+  function isValidGenesisRom(u8) {
+    return (
+      u8.length > 0x120 &&
+      u8[0x100] === 0x53 && // 'S'
+      u8[0x101] === 0x45 && // 'E'
+      u8[0x102] === 0x47 && // 'G'
+      u8[0x103] === 0x41    // 'A'
+    );
+  }
+
+  romFileInput.addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (ev) {
+      const data = new Uint8Array(ev.target.result);
+      if (!isValidGenesisRom(data)) {
+        setStatus("Selected file does not look like a Genesis ROM (missing SEGA header).");
+        return;
+      }
+      romData = data;
+      startGenesis();
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  btnOpenReset.addEventListener("click", function () {
+    if (!romData) {
+      romFileInput.click();
+    } else {
+      startGenesis(); // reload ROM as reset
+    }
+  });
+
+  async function startGenesis() {
+    if (!window.WebRetro || !WebRetro.loadRom) {
+      setStatus("Core not ready yet.");
+      return;
+    }
+    try {
+      setStatus("Loading ROM…");
+      await WebRetro.loadRom(romData);
+      setStatus("Running. Press Corrupt or enable Auto.");
+      btnOpenReset.textContent = "Reset";
+      btnCorrupt.disabled = false;
+      btnAuto.disabled = false;
+      corruptTypeSelect.disabled = false;
+      running = true;
+      lastFrameTime = performance.now();
+      requestAnimationFrame(frameLoop);
+    } catch (e) {
+      setStatus("Error loading ROM:\n" + e.message);
+    }
+  }
+
+  function frameLoop(ts) {
+    if (!running) return;
+
+    const delta = ts - lastFrameTime;
+    const frameDuration = 1000 / fpsCap;
+
+    if (delta >= frameDuration) {
+      lastFrameTime = ts;
+      try {
+        WebRetro.runFrame();
+        ctx.putImageData(imageData, 0, 0);
+        if (autoCorrupt) {
+          corruptMemory();
+        }
+      } catch (e) {
+        setStatus("Emulator error:\n" + e.message);
+        running = false;
+        return;
+      }
+    }
+
+    requestAnimationFrame(frameLoop);
+  }
+
+  function getGenesisRAM() {
+    if (!window.WebRetro || !WebRetro.getMemory) return null;
+    return WebRetro.getMemory("SYSTEM_RAM");
+  }
+
+  function safeCorruptGenesis(ram, intensity, fn) {
+    if (!ram || !ram.length) return;
+    for (let i = 0; i < intensity; i++) {
+      const idx = (Math.random() * ram.length) | 0;
+      fn(ram, idx);
+    }
+  }
+
+  function corruptRandomBytesGenesis(ram, intensity) {
+    safeCorruptGenesis(ram, intensity, (ram, idx) => {
+      ram[idx] = (Math.random() * 256) | 0;
+    });
+  }
+
+  function corruptBitFlipGenesis(ram, intensity) {
+    safeCorruptGenesis(ram, intensity, (ram, idx) => {
+      const bit = 1 << ((Math.random() * 8) | 0);
+      ram[idx] ^= bit;
+    });
+  }
+
+  function corruptXORGenesis(ram, intensity) {
+    const mask = (Math.random() * 256) | 0;
+    safeCorruptGenesis(ram, intensity, (ram, idx) => {
+      ram[idx] ^= mask;
+    });
+  }
+
+  function corruptByteSwapGenesis(ram, intensity) {
+    safeCorruptGenesis(ram, intensity, (ram, idx) => {
+      const idx2 = (Math.random() * ram.length) | 0;
+      const tmp = ram[idx];
+      ram[idx] = ram[idx2];
+      ram[idx2] = tmp;
+    });
+  }
+
+  function corruptMemory() {
+    const ram = getGenesisRAM();
+    if (!ram) return;
+
+    const intensity = parseInt(intensitySlider.value, 10) || 1;
+    const type = corruptTypeSelect.value;
+
+    try {
+      switch (type) {
+        case "Random Bytes":
+          corruptRandomBytesGenesis(ram, intensity);
+          break;
+        case "Bit Flip":
+          corruptBitFlipGenesis(ram, intensity);
+          break;
+        case "XOR":
+          corruptXORGenesis(ram, intensity);
+          break;
+        case "Byte Swap":
+          corruptByteSwapGenesis(ram, intensity);
+          break;
+      }
+    } catch (e) {
+      setStatus("Corruption error:\n" + e.message);
+    }
+  }
+
+  btnCorrupt.addEventListener("click", corruptMemory);
+
+  btnAuto.addEventListener("click", function () {
+    autoCorrupt = !autoCorrupt;
+    btnAuto.textContent = "Auto: " + (autoCorrupt ? "On" : "Off");
+  });
+
+  intensitySlider.addEventListener("input", function () {
+    intensityLabel.textContent = intensitySlider.value;
+  });
+
+  // Keyboard → Genesis input
+  document.addEventListener("keydown", function (e) {
+    if (!window.WebRetro || !WebRetro.setButton) return;
+    const key = e.key.toLowerCase();
+    let handled = true;
+
+    switch (key) {
+      case "arrowup":
+        WebRetro.setButton(0, "UP", true);
+        break;
+      case "arrowdown":
+        WebRetro.setButton(0, "DOWN", true);
+        break;
+      case "arrowleft":
+        WebRetro.setButton(0, "LEFT", true);
+        break;
+      case "arrowright":
+        WebRetro.setButton(0, "RIGHT", true);
+        break;
+
+      case "z": // rebinding: Z → B (was G in standalone)
+        WebRetro.setButton(0, "B", true);
+        break;
+      case "x":
+        WebRetro.setButton(0, "A", true);
+        break;
+      case "c":
+        WebRetro.setButton(0, "C", true);
+        break;
+      case "enter":
+        WebRetro.setButton(0, "START", true);
+        break;
+
+      default:
+        handled = false;
+        break;
+    }
+
+    if (handled) e.preventDefault();
+  });
+
+  document.addEventListener("keyup", function (e) {
+    if (!window.WebRetro || !WebRetro.setButton) return;
+    const key = e.key.toLowerCase();
+    let handled = true;
+
+    switch (key) {
+      case "arrowup":
+        WebRetro.setButton(0, "UP", false);
+        break;
+      case "arrowdown":
+        WebRetro.setButton(0, "DOWN", false);
+        break;
+      case "arrowleft":
+        WebRetro.setButton(0, "LEFT", false);
+        break;
+      case "arrowright":
+        WebRetro.setButton(0, "RIGHT", false);
+        break;
+
+      case "z":
+        WebRetro.setButton(0, "B", false);
+        break;
+      case "x":
+        WebRetro.setButton(0, "A", false);
+        break;
+      case "c":
+        WebRetro.setButton(0, "C", false);
+        break;
+      case "enter":
+        WebRetro.setButton(0, "START", false);
+        break;
+
+      default:
+        handled = false;
+        break;
+    }
+
+    if (handled) e.preventDefault();
+  });
+
+  // Enable basic UI once script is loaded
+  btnOpenReset.disabled = false;
+  setStatus("Core loaded. Open a Genesis ROM to begin.");
+</script>
+</body>
+</html>
