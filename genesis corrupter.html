@@ -28,6 +28,10 @@
     background: #000;
     max-width: 100%;
     max-height: 100%;
+    transition: filter 0.2s ease;
+  }
+  #screen.blurred {
+    filter: blur(4px);
   }
   #controls {
     position: fixed;
@@ -42,6 +46,7 @@
     justify-content: center;
     gap: 8px;
     border-top: 1px solid #333;
+    z-index: 10;
   }
   #controls button,
   #controls select,
@@ -75,6 +80,7 @@
     white-space: pre-line;
     pointer-events: none;
     max-width: 40%;
+    z-index: 10;
   }
   #hint {
     position: fixed;
@@ -84,6 +90,38 @@
     color: #666;
     text-align: right;
     max-width: 40%;
+    z-index: 10;
+  }
+  #menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+  }
+  #menu-overlay.active {
+    display: flex;
+  }
+  #menu-overlay h2 {
+    margin-bottom: 12px;
+    font-size: 16px;
+    color: #fff;
+  }
+  #menu-overlay .slot-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  #menu-overlay button {
+    background: #222;
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 13px;
   }
 </style>
 </head>
@@ -120,23 +158,24 @@
 <div id="status">Loading core…</div>
 <div id="hint">Arrows = D‑Pad · Z = B · X = A · C = C · Enter = Start</div>
 
-<!-- MUST define Module.canvas BEFORE loading the core -->
+<div id="menu-overlay">
+  <h2 id="menu-title">Choose a slot</h2>
+  <div class="slot-buttons">
+    <button data-slot="1">Slot 1</button>
+    <button data-slot="2">Slot 2</button>
+    <button data-slot="3">Slot 3</button>
+    <button data-slot="4">Slot 4</button>
+    <button data-slot="5">Slot 5</button>
+  </div>
+</div>
+
 <script>
-  const canvas = document.getElementById("screen");
-
-  window.Module = {
-    canvas: canvas
-  };
+const canvas = document.getElementById("screen");
+window.Module = { canvas };
 </script>
-
-<!-- Load core JS (same folder) -->
 <script src="genesis_plus_gx_libretro.js"></script>
 
 <script>
-/* -------------------------------------------------------
-   BASIC SETUP
-------------------------------------------------------- */
-
 const ctx = canvas.getContext("2d");
 let imageData = ctx.createImageData(canvas.width, canvas.height);
 
@@ -150,58 +189,56 @@ const corruptTypeSelect = document.getElementById("corrupt-type");
 const btnSave = document.getElementById("btn-save");
 const btnLoad = document.getElementById("btn-load");
 const statusEl = document.getElementById("status");
+const overlay = document.getElementById("menu-overlay");
+const menuTitle = document.getElementById("menu-title");
+const slotButtons = overlay.querySelectorAll("button[data-slot]");
 
 let romData = null;
 let running = false;
 let autoCorrupt = false;
 let lastFrameTime = 0;
 let fpsCap = 60;
+let currentMenu = null;
 
 function setStatus(msg) {
   statusEl.textContent = msg || "";
 }
 
-/* -------------------------------------------------------
-   VIDEO CALLBACK
-------------------------------------------------------- */
+WebRetro.onCoreLoaded = function () {
+  WebRetro.setCanvas(canvas);
 
-WebRetro.onFrame = function (buffer, width, height) {
-  if (!buffer) return;
+  WebRetro.onFrame = function (buffer, width, height) {
+    if (!buffer) return;
+    if (width !== canvas.width || height !== canvas.height) {
+      canvas.width = width;
+      canvas.height = height;
+      imageData = ctx.createImageData(width, height);
+    }
+    const dst = imageData.data;
+    const len = Math.min(dst.length, buffer.length);
+    for (let i = 0; i < len; i++) dst[i] = buffer[i];
+  };
 
-  if (width !== canvas.width || height !== canvas.height) {
-    canvas.width = width;
-    canvas.height = height;
-    imageData = ctx.createImageData(width, height);
-  }
-
-  const dst = imageData.data;
-  const len = Math.min(dst.length, buffer.length);
-  for (let i = 0; i < len; i++) dst[i] = buffer[i];
+  btnOpenReset.disabled = false;
+  setStatus("Core loaded. Open a Genesis ROM to begin.");
 };
 
-/* -------------------------------------------------------
-   ROM LOADING
-------------------------------------------------------- */
-
 function isValidGenesisRom(u8) {
-  return (
-    u8.length > 0x120 &&
+  return u8.length > 0x120 &&
     u8[0x100] === 0x53 &&
     u8[0x101] === 0x45 &&
     u8[0x102] === 0x47 &&
-    u8[0x103] === 0x41
-  );
+    u8[0x103] === 0x41;
 }
 
 romFileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
-
   const reader = new FileReader();
   reader.onload = ev => {
     const data = new Uint8Array(ev.target.result);
     if (!isValidGenesisRom(data)) {
-      setStatus("Not a valid Genesis ROM (missing SEGA header).");
+      setStatus("Not a valid Genesis ROM.");
       return;
     }
     romData = data;
@@ -219,176 +256,4 @@ async function startGenesis() {
   try {
     setStatus("Loading ROM…");
     await WebRetro.loadRom(romData);
-
-    setStatus("Running. Use Corrupt or Auto.");
-    btnOpenReset.textContent = "Reset";
-    btnCorrupt.disabled = false;
-    btnAuto.disabled = false;
-    corruptTypeSelect.disabled = false;
-    btnSave.disabled = false;
-    btnLoad.disabled = false;
-
-    running = true;
-    lastFrameTime = performance.now();
-    requestAnimationFrame(frameLoop);
-  } catch (e) {
-    setStatus("Error loading ROM:\n" + e.message);
-  }
-}
-
-/* -------------------------------------------------------
-   FRAME LOOP
-------------------------------------------------------- */
-
-function frameLoop(ts) {
-  if (!running) return;
-
-  const delta = ts - lastFrameTime;
-  const frameDuration = 1000 / fpsCap;
-
-  if (delta >= frameDuration) {
-    lastFrameTime = ts;
-    WebRetro.runFrame();
-    ctx.putImageData(imageData, 0, 0);
-    if (autoCorrupt) corruptMemory();
-  }
-
-  requestAnimationFrame(frameLoop);
-}
-
-/* -------------------------------------------------------
-   CORRUPTION ENGINE
-------------------------------------------------------- */
-
-function getGenesisRAM() {
-  return WebRetro.getMemory("SYSTEM_RAM");
-}
-
-function safeCorrupt(ram, intensity, fn) {
-  if (!ram) return;
-  for (let i = 0; i < intensity; i++) {
-    const idx = (Math.random() * ram.length) | 0;
-    fn(ram, idx);
-  }
-}
-
-function corruptRandom(ram, n) {
-  safeCorrupt(ram, n, (ram, i) => ram[i] = (Math.random() * 256) | 0);
-}
-function corruptBitFlip(ram, n) {
-  safeCorrupt(ram, n, (ram, i) => ram[i] ^= 1 << ((Math.random() * 8) | 0));
-}
-function corruptXOR(ram, n) {
-  const mask = (Math.random() * 256) | 0;
-  safeCorrupt(ram, n, (ram, i) => ram[i] ^= mask);
-}
-function corruptSwap(ram, n) {
-  safeCorrupt(ram, n, (ram, i) => {
-    const j = (Math.random() * ram.length) | 0;
-    const t = ram[i];
-    ram[i] = ram[j];
-    ram[j] = t;
-  });
-}
-
-function corruptMemory() {
-  const ram = getGenesisRAM();
-  const n = parseInt(intensitySlider.value, 10);
-  const type = corruptTypeSelect.value;
-
-  if (!ram) return;
-
-  switch (type) {
-    case "Random Bytes": corruptRandom(ram, n); break;
-    case "Bit Flip": corruptBitFlip(ram, n); break;
-    case "XOR": corruptXOR(ram, n); break;
-    case "Byte Swap": corruptSwap(ram, n); break;
-  }
-}
-
-btnCorrupt.addEventListener("click", corruptMemory);
-
-btnAuto.addEventListener("click", () => {
-  autoCorrupt = !autoCorrupt;
-  btnAuto.textContent = "Auto: " + (autoCorrupt ? "On" : "Off");
-});
-
-intensitySlider.addEventListener("input", () => {
-  intensityLabel.textContent = intensitySlider.value;
-});
-
-/* -------------------------------------------------------
-   SAVE STATES (localStorage)
-------------------------------------------------------- */
-
-btnSave.addEventListener("click", () => {
-  const state = WebRetro.saveState();
-  localStorage.setItem("GenesisCorrupter", JSON.stringify(Array.from(state)));
-  setStatus("State saved.");
-});
-
-btnLoad.addEventListener("click", () => {
-  const raw = localStorage.getItem("GenesisCorrupter");
-  if (!raw) {
-    setStatus("No saved state.");
-    return;
-  }
-  const arr = new Uint8Array(JSON.parse(raw));
-  WebRetro.loadState(arr);
-  setStatus("State loaded.");
-});
-
-/* -------------------------------------------------------
-   INPUT HANDLING
-------------------------------------------------------- */
-
-document.addEventListener("keydown", e => {
-  const k = e.key.toLowerCase();
-  let h = true;
-
-  switch (k) {
-    case "arrowup": WebRetro.setButton(0, "UP", true); break;
-    case "arrowdown": WebRetro.setButton(0, "DOWN", true); break;
-    case "arrowleft": WebRetro.setButton(0, "LEFT", true); break;
-    case "arrowright": WebRetro.setButton(0, "RIGHT", true); break;
-
-    case "z": WebRetro.setButton(0, "B", true); break;
-    case "x": WebRetro.setButton(0, "A", true); break;
-    case "c": WebRetro.setButton(0, "C", true); break;
-    case "enter": WebRetro.setButton(0, "START", true); break;
-
-    default: h = false;
-  }
-  if (h) e.preventDefault();
-});
-
-document.addEventListener("keyup", e => {
-  const k = e.key.toLowerCase();
-  let h = true;
-
-  switch (k) {
-    case "arrowup": WebRetro.setButton(0, "UP", false); break;
-    case "arrowdown": WebRetro.setButton(0, "DOWN", false); break;
-    case "arrowleft": WebRetro.setButton(0, "LEFT", false); break;
-    case "arrowright": WebRetro.setButton(0, "RIGHT", false); break;
-
-    case "z": WebRetro.setButton(0, "B", false); break;
-    case "x": WebRetro.setButton(0, "A", false); break;
-    case "c": WebRetro.setButton(0, "C", false); break;
-    case "enter": WebRetro.setButton(0, "START", false); break;
-
-    default: h = false;
-  }
-  if (h) e.preventDefault();
-});
-
-/* -------------------------------------------------------
-   READY
-------------------------------------------------------- */
-
-btnOpenReset.disabled = false;
-setStatus("Core loaded. Open a Genesis ROM to begin.");
-
-</script>
-</body>
-</html>
+    setStatus("Running
