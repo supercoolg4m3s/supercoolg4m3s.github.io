@@ -377,7 +377,7 @@ let currentROM = null;
 ///const scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
 
 const audioCtx = new AudioContext();
-audioCtx.audioWorklet.addModule("nes-audio-worklet.js");
+audioCtx.audioWorklet.addModule("https://supercoolg4m3s.github.io/nesaudioworklet.js");
 
 const nesNode = new AudioWorkletNode(audioCtx, "nes-audio");
 nesNode.connect(audioCtx.destination);
