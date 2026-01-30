@@ -377,10 +377,21 @@ let currentROM = null;
 ///const scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
 
 const audioCtx = new AudioContext();
-audioCtx.audioWorklet.addModule("https://supercoolg4m3s.github.io/nesaudioworklet.js");
 
-const nesNode = new AudioWorkletNode(audioCtx, "nes-audio");
-nesNode.connect(audioCtx.destination);
+async function setupAudio() {
+  await audioCtx.audioWorklet.addModule("https://supercoolg4m3s.github.io/nesaudioworklet.js");
+
+  const nesNode = new AudioWorkletNode(audioCtx, "nes-audio");
+  nesNode.connect(audioCtx.destination);
+
+  // Resume audio context after user interaction
+  document.body.addEventListener("click", () => {
+    audioCtx.resume();
+  }, { once: true });
+}
+
+setupAudio();
+
 
 
 //const audioBufferL = new Float32Array(1024);
