@@ -1,0 +1,99 @@
+body,
+html,
+#app {
+	width: 100vw;
+	height: 100vh;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+iframe {
+	height: 100%;
+}
+html,
+body {
+	/* Theme color mixing variables - reused throughout UI */
+	--text-5: color-mix(in srgb, var(--toolbar_text) 5%, transparent);
+	--text-8: color-mix(in srgb, var(--toolbar_text) 8%, transparent);
+	--text-10: color-mix(in srgb, var(--toolbar_text) 10%, transparent);
+	--text-15: color-mix(in srgb, var(--toolbar_text) 15%, transparent);
+	--text-20: color-mix(in srgb, var(--toolbar_text) 20%, transparent);
+	--text-30: color-mix(in srgb, var(--toolbar_text) 30%, transparent);
+	--text-35: color-mix(in srgb, var(--toolbar_text) 35%, transparent);
+	--text-40: color-mix(in srgb, var(--toolbar_text) 40%, transparent);
+	--text-50: color-mix(in srgb, var(--toolbar_text) 50%, transparent);
+	--text-60: color-mix(in srgb, var(--toolbar_text) 60%, transparent);
+	--text-65: color-mix(in srgb, var(--toolbar_text) 65%, transparent);
+	--text-70: color-mix(in srgb, var(--toolbar_text) 70%, transparent);
+
+	--ntp-text-5: color-mix(in srgb, var(--ntp_text) 5%, transparent);
+	--ntp-text-8: color-mix(in srgb, var(--ntp_text) 8%, transparent);
+	--ntp-text-10: color-mix(in srgb, var(--ntp_text) 10%, transparent);
+	--ntp-text-15: color-mix(in srgb, var(--ntp_text) 15%, transparent);
+	--ntp-text-20: color-mix(in srgb, var(--ntp_text) 20%, transparent);
+	--ntp-text-60: color-mix(in srgb, var(--ntp_text) 60%, transparent);
+	--ntp-text-70: color-mix(in srgb, var(--ntp_text) 70%, transparent);
+
+	--field-text-50: color-mix(
+		in srgb,
+		var(--toolbar_field_text) 50%,
+		transparent
+	);
+	--field-text-60: color-mix(
+		in srgb,
+		var(--toolbar_field_text) 60%,
+		transparent
+	);
+
+	--accent-dark: color-mix(in srgb, var(--tab_line) 85%, black);
+	--accent-20: color-mix(in oklab, var(--tab_line) 20%, transparent);
+	--accent-15: color-mix(in oklab, var(--tab_line) 15%, transparent);
+
+	--font: "Inter", system-ui, sans-serif;
+	--radius: 0.5em;
+
+	font-family: var(--font);
+	color: var(--toolbar_text);
+	background: var(--toolbar);
+	accent-color: var(--tab_line);
+	color-scheme: dark;
+}
+
+body.light-mode {
+	color-scheme: light;
+}
+
+:root {
+	font-family: "Inter", system-ui, sans-serif;
+	--tab-height: 37px;
+
+	--toolbarbutton-hover-background: color-mix(
+		in srgb,
+		currentColor 17%,
+		transparent
+	);
+	--toolbarbutton-active-background: color-mix(
+		in srgb,
+		currentColor 30%,
+		transparent
+	);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+h1 {
+	font-size: 2em;
+}
+
+button {
+	border: none;
+	background: none;
+	color: var(--toolbar_text);
+	padding: 0;
+	cursor: pointer;
+	font-family: var(--font);
+}
